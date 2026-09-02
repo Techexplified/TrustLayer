@@ -1,0 +1,7 @@
+api_version = "2026-07"
+
+[[extensions]]
+name = "TrustLayer Badge"
+handle = "trust-layer-badge"
+uid = "109c2c20-a938-9e36-dbc8-8d42703caeb14d58e9d0"
+type = "theme"

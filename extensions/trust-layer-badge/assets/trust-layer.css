@@ -1,0 +1,237 @@
+/* TrustLayer Storefront Badge Styles */
+.tl-badge-container {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  margin: 16px 0;
+  box-sizing: border-box;
+  color: #0f172a;
+  width: 100%;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s ease-in-out;
+}
+.tl-badge-container.tl-ready {
+  opacity: 1;
+  visibility: visible;
+}
+.tl-badge-container * {
+  box-sizing: border-box;
+}
+
+/* 1. Full Badge Style */
+.tl-badge-full {
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px 18px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+.tl-badge-full-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+.tl-badge-shield-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.tl-badge-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background-color: #ecfdf5;
+  color: #059669;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+.tl-badge-score-line {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  line-height: 1.2;
+}
+.tl-badge-score-val {
+  font-size: 18px;
+  font-weight: 900;
+  color: #0f172a;
+}
+.tl-badge-score-denom {
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 700;
+}
+.tl-badge-score-title {
+  font-size: 13px;
+  color: #475569;
+  font-weight: 700;
+  margin-left: 4px;
+}
+.tl-badge-tier-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+  font-size: 12px;
+}
+.tl-badge-vendor-by {
+  font-size: 12px;
+  color: #475569;
+}
+.tl-badge-vendor-by strong {
+  color: #0f172a;
+}
+.tl-badge-brand-tag {
+  background-color: #eff6ff;
+  color: #2563eb;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.tl-badge-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+  border-top: 1px solid #f1f5f9;
+  padding-top: 12px;
+  margin-top: 4px;
+}
+.tl-metric-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.tl-metric-label {
+  color: #475569;
+  font-weight: 500;
+}
+.tl-metric-val-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tl-metric-val {
+  font-weight: 800;
+  color: #0f172a;
+  font-size: 12px;
+}
+.tl-progress-bar {
+  width: 55px;
+  height: 4px;
+  background-color: #f1f5f9;
+  border-radius: 3px;
+  overflow: hidden;
+}
+.tl-progress-fill-amber {
+  height: 100%;
+  background-color: #f59e0b;
+  border-radius: 3px;
+}
+.tl-progress-fill-green {
+  height: 100%;
+  background-color: #10b981;
+  border-radius: 3px;
+}
+.tl-badge-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid #f1f5f9;
+  margin-top: 12px;
+  padding-top: 8px;
+  font-size: 11px;
+  color: #94a3b8;
+}
+.tl-badge-confidence {
+  color: #059669;
+  font-weight: 700;
+}
+
+/* 2. Compact Badge Style */
+.tl-badge-compact {
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 10px 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+.tl-badge-compact-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+.tl-compact-score {
+  font-weight: 900;
+  color: #0f172a;
+  font-size: 14px;
+}
+.tl-compact-denom {
+  font-size: 10px;
+  color: #94a3b8;
+  font-weight: 700;
+}
+
+/* 3. Minimal Badge Style */
+.tl-badge-minimal {
+  background-color: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 8px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+/* 4. Sticky Bottom Bar */
+.tl-badge-sticky-bar {
+  position: fixed !important;
+  bottom: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  background-color: #0f172a !important;
+  color: #ffffff !important;
+  padding: 12px 20px !important;
+  z-index: 999999 !important;
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.18) !important;
+  font-size: 13px !important;
+  margin: 0 !important;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.2s ease-in-out;
+}
+.tl-badge-sticky-bar.tl-ready {
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+/* 5. Cart Protected Banner */
+.tl-cart-banner {
+  background-color: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin: 12px 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: #1e40af;
+}

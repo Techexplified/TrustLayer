@@ -1,0 +1,20 @@
+{% comment %}
+  TrustLayer Auto Embed — App Embed Block (target: body)
+  Injects the app's API URL and shop domain into the page so trust-layer.js
+  can call /api/widget on the correct tunnel URL with CORS headers.
+{% endcomment %}
+
+<script>
+  window.TrustLayerShop = {{ shop.permanent_domain | json }};
+  window.TrustLayerApiUrl = {{ app.url | append: "/api/widget" | json }};
+</script>
+{{ 'trust-layer.css' | asset_url | stylesheet_tag }}
+<script src="{{ 'trust-layer.js' | asset_url }}" defer="defer"></script>
+
+{% schema %}
+{
+  "name": "TrustLayer Embed",
+  "target": "body",
+  "settings": []
+}
+{% endschema %}

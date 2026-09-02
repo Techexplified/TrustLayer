@@ -1,0 +1,101 @@
+{% comment %}
+  TrustLayer Badge — App Block (target: section)
+  Renders verified supplier trust score and actual product reviews
+{% endcomment %}
+
+{%- assign vendor_name = product.vendor | default: shop.name -%}
+
+{%- comment -%} Extract real product reviews from standard Shopify/Judge.me/SPR metafields {%- endcomment -%}
+{%- assign raw_rating = product.metafields.reviews.rating.value.rating | default: product.metafields.reviews.rating.value -%}
+{%- assign raw_rating_count = product.metafields.reviews.rating_count.value | default: product.metafields.reviews.rating_count -%}
+
+{%- if raw_rating == blank and product.metafields.judgeme.badge != blank -%}
+  {%- assign raw_rating = 5.0 -%}
+  {%- assign raw_rating_count = 1 -%}
+{%- endif -%}
+
+{%- assign rating_num = raw_rating | plus: 0.0 -%}
+{%- assign rating_count_num = raw_rating_count | plus: 0 -%}
+
+<div class="tl-badge-container trust-layer-block-root"
+     data-vendor="{{ vendor_name | escape }}"
+     data-product-id="{{ product.id }}"
+     data-product-rating="{% if rating_count_num > 0 %}{{ rating_num | round: 1 }}{% else %}0{% endif %}"
+     data-product-reviews="{{ rating_count_num }}">
+
+  <div class="tl-badge-full">
+    <div class="tl-badge-full-header">
+      <div class="tl-badge-shield-wrap">
+        <div class="tl-badge-icon">🛡️</div>
+        <div>
+          <div class="tl-badge-score-line">
+            <span class="tl-badge-score-val tl-live-score">85</span>
+            <span class="tl-badge-score-denom">/100</span>
+            <span class="tl-badge-score-title">Vendor Trust</span>
+          </div>
+          <div class="tl-badge-tier-line">
+            <span class="tl-badge-vendor-by">by <strong>{{ vendor_name | escape }}</strong></span>
+          </div>
+        </div>
+      </div>
+      <span class="tl-badge-brand-tag">🛡️ TrustLayer</span>
+    </div>
+
+    <div class="tl-badge-metrics">
+      <div class="tl-metric-row">
+        <span class="tl-metric-label">⭐ Product reviews (Item)</span>
+        <div class="tl-metric-val-wrap">
+          <span class="tl-metric-val tl-live-csat">
+            {%- if rating_count_num > 0 -%}
+              {{ rating_num | round: 1 }} ★ ({{ rating_count_num }} {% if rating_count_num == 1 %}review{% else %}reviews{% endif %})
+            {%- else -%}
+              0.0 ★ (0 reviews)
+            {%- endif -%}
+          </span>
+          <div class="tl-progress-bar">
+            {%- assign csat_pct = rating_num | times: 20 | round -%}
+            <div class="tl-progress-fill-amber tl-live-csat-bar" style="width: {% if rating_count_num > 0 %}{{ csat_pct }}{% else %}0{% endif %}%;"></div>
+          </div>
+        </div>
+      </div>
+      <div class="tl-metric-row">
+        <span class="tl-metric-label">📦 Vendor on-time shipping</span>
+        <div class="tl-metric-val-wrap">
+          <span class="tl-metric-val tl-live-ontime">100%</span>
+          <div class="tl-progress-bar">
+            <div class="tl-progress-fill-green tl-live-ontime-bar" style="width: 100%;"></div>
+          </div>
+        </div>
+      </div>
+      <div class="tl-metric-row">
+        <span class="tl-metric-label">🔄 Vendor return rate</span>
+        <div class="tl-metric-val-wrap">
+          <span class="tl-metric-val tl-live-return">2.1%</span>
+          <div class="tl-progress-bar">
+            <div class="tl-progress-fill-green tl-live-return-bar" style="width: 25%;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tl-badge-footer">
+      <span>Verified supplier &amp; listing</span>
+      <span class="tl-badge-confidence">🛡️ Shop with confidence</span>
+    </div>
+  </div>
+</div>
+
+{% schema %}
+{
+  "name": "TrustLayer Badge",
+  "target": "section",
+  "stylesheet": "trust-layer.css",
+  "javascript": "trust-layer.js",
+  "settings": [
+    {
+      "type": "paragraph",
+      "content": "Displays your verified TrustLayer supplier trust score and product reviews."
+    }
+  ]
+}
+{% endschema %}

@@ -1,0 +1,146 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  // url      = env("DATABASE_URL")
+}
+
+model Session {
+  id                  String    @id
+  shop                String
+  state               String
+  isOnline            Boolean   @default(false)
+  scope               String?
+  expires             DateTime?
+  accessToken         String
+  userId              BigInt?
+  firstName           String?
+  lastName            String?
+  email               String?
+  accountOwner        Boolean   @default(false)
+  locale              String?
+  collaborator        Boolean?  @default(false)
+  emailVerified       Boolean?  @default(false)
+  refreshToken        String?
+  refreshTokenExpires DateTime?
+}
+
+model AppSettings {
+  id                   String    @id @default(uuid())
+  shop                 String    @unique
+  
+  // 🏪 Merchant & Store Details
+  storeName            String?   @default("My Store")
+  merchantEmail        String?
+  myshopifyDomain      String?
+  currencyCode         String?   @default("USD")
+  storeCreatedAt       DateTime?
+  storeAgeDays         Int       @default(0)
+  completedOrdersCount Int       @default(0)
+  
+  // 🚀 Onboarding State
+  onboardingStep       Int       @default(1)
+  onboardingCompleted  Boolean   @default(false)
+  
+  // 🛡️ Trust Score & Storefront Badge Config
+  trustScore           Int       @default(87)
+  badgeEnabled         Boolean   @default(true)
+  badgePlacement       String    @default("PRODUCT_PAGE_BELOW_ATC")
+  
+  // 🎨 Widget Customization
+  showOnProductPages   Boolean   @default(true)
+  showOnSellerProfile  Boolean   @default(true)
+  showOnCartPage       Boolean   @default(false)
+  showProductReviews   Boolean   @default(true)
+  badgeStyle           String    @default("FULL") // FULL | COMPACT | MINIMAL
+  compactMode          Boolean   @default(false)
+  showNumericScore     Boolean   @default(true)
+
+  // ⚙️ General Preferences
+  dataWindow           String    @default("90 days")
+  timezone             String    @default("(GMT+05:30) Asia/Kolkata")
+  
+  // ⚖️ Standardized Score Weights (Fixed by TrustLayer)
+  fulfillmentWeight    Int       @default(40)
+  returnWeight         Int       @default(25)
+  disputeWeight        Int       @default(25)
+  historyWeight        Int       @default(10)
+  
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+}
+
+model Supplier {
+  id                  String    @id @default(uuid())
+  shop                String
+  vendorName          String
+  
+  // Catalog & Inventory
+  totalProducts       Int       @default(0)
+  totalInventory      Int       @default(0)
+  
+  // Orders & Volume
+  totalOrders         Int       @default(0)
+  completedOrders     Int       @default(0)
+  totalUnitsSold      Int       @default(0)
+  totalRevenue        Float     @default(0.0)
+  
+  // Fulfillment Performance
+  avgFulfillmentHours Float     @default(24.0)
+  onTimeDeliveryRate  Int       @default(95)
+  
+  // Returns & Quality
+  refundedUnitsCount  Int       @default(0)
+  returnRate          Float     @default(2.0)
+  disputedOrdersCount Int       @default(0)
+  disputeRate         Float     @default(0.5)
+  csatRating          Float     @default(4.8)
+  
+  // Trust Layer Score & Status
+  trustScore          Int       @default(85)
+  isEligibleForBadge  Boolean   @default(true)
+  status              String    @default("GOOD") // GOOD | NEEDS_ATTENTION | CRITICAL
+  
+  firstOrderAt        DateTime?
+  lastOrderAt         DateTime?
+  
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  alerts              SupplierAlert[]
+
+  @@unique([shop, vendorName])
+  @@index([shop])
+}
+
+model SupplierAlert {
+  id          String   @id @default(uuid())
+  supplierId  String
+  shop        String
+  type        String   // RETURN_SPIKE | FULFILLMENT_DELAY | DISPUTE_ALERT | CSAT_DROP
+  severity    String   // HIGH | MEDIUM | LOW
+  title       String
+  description String
+  isResolved  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  supplier    Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  @@index([supplierId])
+  @@index([shop])
+}
+
+model PerformanceAiSuggestion {
+  id                String   @id @default(uuid())
+  shop              String   @unique
+  suggestions       String   @db.Text
+  isGenerated       Boolean  @default(false)
+  regenerationCount Int      @default(0)
+  lastGeneratedAt   DateTime @default(now())
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([shop])
+}
