@@ -2,12 +2,11 @@
 
 client_id = "57f083d21cc50b6c2e9512b6193ac738"
 name = "TrustLayer"
-application_url = "https://example.com"
+application_url = "https://trust-layer-chi.vercel.app"
 embedded = true
 
 [build]
 automatically_update_urls_on_dev = true
-include_config_on_deploy = true
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
@@ -33,9 +32,9 @@ api_version = "2026-10"
   topics = [ "shop/update" ]
 
 [auth]
-redirect_urls = [ "https://example.com/api/auth" ]
+redirect_urls = [ "https://trust-layer-chi.vercel.app/api/auth" ]
 
 [app_proxy]
-url = "https://example.com/apps/proxy"
+url = "https://trust-layer-chi.vercel.app/apps/proxy"
 subpath = "trust-layer"
 prefix = "apps"

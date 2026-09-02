@@ -549,16 +549,19 @@ export async function collectAllVendorsData(
         )
       : null;
 
-  const activeCount = suppliersWithCompletedOrders.length;
+  const totalUnitsStore = calculatedVendors.reduce((acc, v) => acc + (v.totalUnitsSold || 0), 0);
+  const totalRefundsStore = calculatedVendors.reduce((acc, v) => acc + (v.refundedUnitsCount || 0), 0);
+  const totalDisputesStore = calculatedVendors.reduce((acc, v) => acc + (v.disputedOrdersCount || 0), 0);
+  const totalCompletedStore = calculatedVendors.reduce((acc, v) => acc + (v.completedOrders || 0), 0);
 
   const avgReturnRate =
-    activeCount > 0
-      ? parseFloat((suppliersWithCompletedOrders.reduce((acc, v) => acc + v.returnRate, 0) / activeCount).toFixed(1))
+    totalUnitsStore > 0
+      ? parseFloat(((totalRefundsStore / totalUnitsStore) * 100).toFixed(1))
       : 0.0;
 
   const avgDisputeRate =
-    activeCount > 0
-      ? parseFloat((suppliersWithCompletedOrders.reduce((acc, v) => acc + v.disputeRate, 0) / activeCount).toFixed(1))
+    totalCompletedStore > 0
+      ? parseFloat(((totalDisputesStore / totalCompletedStore) * 100).toFixed(1))
       : 0.0;
 
   const suppliersWithCsat = calculatedVendors.filter((v) => v.csatRating !== null);

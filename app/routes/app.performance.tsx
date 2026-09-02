@@ -238,6 +238,7 @@ export default function PerformancePage() {
   // Compute live / real values based on store and vendor data for the selected period
   const totalCompletedOrders = suppliers.reduce((acc: number, s: CollectedVendorData) => acc + s.completedOrders, 0);
   const totalOrdersScored = totalCompletedOrders;
+  const totalUnitsSold = suppliers.reduce((acc: number, s: CollectedVendorData) => acc + (s.totalUnitsSold || 0), 0);
   const totalReturnsCount = suppliers.reduce((acc: number, s: CollectedVendorData) => acc + s.refundedUnitsCount, 0);
   const totalDisputesCount = suppliers.reduce((acc: number, s: CollectedVendorData) => acc + s.disputedOrdersCount, 0);
   const totalProductsCount = suppliers.reduce((acc: number, s: CollectedVendorData) => acc + s.totalProducts, 0);
@@ -251,6 +252,17 @@ export default function PerformancePage() {
   const rawTrustScore = summary?.marketplaceTrustScore ?? null;
   const hasCompletedOrders = totalCompletedOrders > 0;
 
+  // Compute live rates from actual units and orders
+  const liveReturnRate =
+    totalUnitsSold > 0
+      ? parseFloat(((totalReturnsCount / totalUnitsSold) * 100).toFixed(1))
+      : (summary?.returnRate ?? 0.0);
+
+  const liveDisputeRate =
+    totalCompletedOrders > 0
+      ? parseFloat(((totalDisputesCount / totalCompletedOrders) * 100).toFixed(1))
+      : (summary?.disputeRate ?? 0.0);
+
   // Real or derived performance scores for the breakdown
   const overallScore = rawTrustScore;
   const fulfillmentScore =
@@ -260,15 +272,8 @@ export default function PerformancePage() {
       ? 100
       : null;
 
-  const returnScore =
-    hasCompletedOrders && summary?.returnRate !== undefined
-      ? Math.max(0, Math.round(100 - summary.returnRate * 10))
-      : 100;
-
-  const disputeScore =
-    hasCompletedOrders && summary?.disputeRate !== undefined
-      ? Math.max(0, Math.round(100 - summary.disputeRate * 50))
-      : 100;
+  const returnScore = Math.max(0, Math.round(100 - liveReturnRate * 10));
+  const disputeScore = Math.max(0, Math.round(100 - liveDisputeRate * 50));
 
   const storeAgeDays = settings?.storeAgeDays || 0;
   const historyScore = Math.min(100, Math.max(50, Math.round((storeAgeDays || 1) / 3.5)));
@@ -1315,7 +1320,7 @@ export default function PerformancePage() {
                 </div>
                 <div>
                   <span style={{ fontWeight: "700", color: "#0f172a" }}>
-                    {fulfillmentScore !== null ? `${fulfillmentScore}/100` : "—"}
+                    {fulfillmentScore !== null ? `${fulfillmentScore}%` : "100%"}
                   </span>{" "}
                   <span style={{ color: "#94a3b8", fontSize: "11px" }}>20%</span>
                 </div>
@@ -1328,7 +1333,7 @@ export default function PerformancePage() {
                 </div>
                 <div>
                   <span style={{ fontWeight: "700", color: "#0f172a" }}>
-                    {hasCompletedOrders ? `${returnScore}/100` : "100/100"}
+                    {liveReturnRate.toFixed(1)}%
                   </span>{" "}
                   <span style={{ color: "#94a3b8", fontSize: "11px" }}>20%</span>
                 </div>
@@ -1341,7 +1346,7 @@ export default function PerformancePage() {
                 </div>
                 <div>
                   <span style={{ fontWeight: "700", color: "#0f172a" }}>
-                    {hasCompletedOrders ? `${disputeScore}/100` : "100/100"}
+                    {liveDisputeRate.toFixed(1)}%
                   </span>{" "}
                   <span style={{ color: "#94a3b8", fontSize: "11px" }}>15%</span>
                 </div>
@@ -2272,7 +2277,7 @@ export default function PerformancePage() {
                         border: "1px solid #a7f3d0",
                       }}
                     >
-                      {hasCompletedOrders ? `${returnScore}/100` : "100/100"}
+                      {liveReturnRate.toFixed(1)}%
                     </span>
                   </div>
 
@@ -2282,9 +2287,9 @@ export default function PerformancePage() {
                       <span style={{ color: "#64748b" }}>Return rate</span>
                       <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                         <div style={{ width: "42px", height: "4px", backgroundColor: "#f1f5f9", borderRadius: "2px", overflow: "hidden" }}>
-                          <div style={{ width: `${Math.min(100, (summary?.returnRate || 0) * 15)}%`, height: "100%", backgroundColor: "#059669" }} />
+                          <div style={{ width: `${Math.min(100, liveReturnRate * 15)}%`, height: "100%", backgroundColor: "#059669" }} />
                         </div>
-                        <span style={{ fontWeight: "700", color: "#0f172a" }}>{summary?.returnRate ?? 0}%</span>
+                        <span style={{ fontWeight: "700", color: "#0f172a" }}>{liveReturnRate.toFixed(1)}%</span>
                       </div>
                     </div>
 
@@ -2311,8 +2316,8 @@ export default function PerformancePage() {
                     {compareToMarketplace && (
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "10.5px", backgroundColor: "#f8fafc", padding: "4px 7px", borderRadius: "6px", marginTop: "2px", border: "1px solid #f1f5f9" }}>
                         <span style={{ color: "#64748b" }}>Market Avg</span>
-                        <span style={{ fontWeight: "700", color: (summary?.returnRate ?? 0) <= (benchmark?.avgReturnRate ?? 3.5) ? "#16a34a" : "#dc2626" }}>
-                          {benchmark?.avgReturnRate ?? 3.5}% ({((benchmark?.avgReturnRate ?? 3.5) - (summary?.returnRate ?? 0)) >= 0 ? `${((benchmark?.avgReturnRate ?? 3.5) - (summary?.returnRate ?? 0)).toFixed(1)}% better` : `${((summary?.returnRate ?? 0) - (benchmark?.avgReturnRate ?? 3.5)).toFixed(1)}% higher`})
+                        <span style={{ fontWeight: "700", color: liveReturnRate <= (benchmark?.avgReturnRate ?? 3.5) ? "#16a34a" : "#dc2626" }}>
+                          {benchmark?.avgReturnRate ?? 3.5}% ({((benchmark?.avgReturnRate ?? 3.5) - liveReturnRate) >= 0 ? `${((benchmark?.avgReturnRate ?? 3.5) - liveReturnRate).toFixed(1)}% better` : `${(liveReturnRate - (benchmark?.avgReturnRate ?? 3.5)).toFixed(1)}% higher`})
                         </span>
                       </div>
                     )}
@@ -2320,9 +2325,9 @@ export default function PerformancePage() {
                 </div>
 
                 {/* Footer */}
-                <div style={{ display: "flex", alignItems: "center", gap: "5px", paddingTop: "10px", marginTop: "12px", borderTop: "1px solid #f1f5f9", fontSize: "11px", fontWeight: "600", color: (summary?.returnRate ?? 0) > 2 ? "#d97706" : "#16a34a" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "5px", paddingTop: "10px", marginTop: "12px", borderTop: "1px solid #f1f5f9", fontSize: "11px", fontWeight: "600", color: liveReturnRate > 2 ? "#d97706" : "#16a34a" }}>
                   <RotateCcw size={12} />
-                  <span>{totalReturnsCount === 0 ? "Zero returns recorded" : `${totalReturnsCount} returned units`}</span>
+                  <span>{totalReturnsCount === 0 ? "Zero returns recorded" : `${totalReturnsCount} returned units`} (Pillar: {returnScore}/100)</span>
                 </div>
               </div>
 
@@ -2376,7 +2381,7 @@ export default function PerformancePage() {
                         border: "1px solid #fde68a",
                       }}
                     >
-                      {hasCompletedOrders ? `${disputeScore}/100` : "100/100"}
+                      {liveDisputeRate.toFixed(1)}%
                     </span>
                   </div>
 
@@ -2386,9 +2391,9 @@ export default function PerformancePage() {
                       <span style={{ color: "#64748b" }}>Dispute rate</span>
                       <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                         <div style={{ width: "42px", height: "4px", backgroundColor: "#f1f5f9", borderRadius: "2px", overflow: "hidden" }}>
-                          <div style={{ width: `${Math.min(100, (summary?.disputeRate || 0) * 20)}%`, height: "100%", backgroundColor: "#d97706" }} />
+                          <div style={{ width: `${Math.min(100, liveDisputeRate * 20)}%`, height: "100%", backgroundColor: "#d97706" }} />
                         </div>
-                        <span style={{ fontWeight: "700", color: "#0f172a" }}>{summary?.disputeRate ?? 0}%</span>
+                        <span style={{ fontWeight: "700", color: "#0f172a" }}>{liveDisputeRate.toFixed(1)}%</span>
                       </div>
                     </div>
 
@@ -2415,8 +2420,8 @@ export default function PerformancePage() {
                     {compareToMarketplace && (
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "10.5px", backgroundColor: "#f8fafc", padding: "4px 7px", borderRadius: "6px", marginTop: "2px", border: "1px solid #f1f5f9" }}>
                         <span style={{ color: "#64748b" }}>Market Avg</span>
-                        <span style={{ fontWeight: "700", color: (summary?.disputeRate ?? 0) <= (benchmark?.avgDisputeRate ?? 0.5) ? "#16a34a" : "#dc2626" }}>
-                          {benchmark?.avgDisputeRate ?? 0.5}% ({((benchmark?.avgDisputeRate ?? 0.5) - (summary?.disputeRate ?? 0)) >= 0 ? `${((benchmark?.avgDisputeRate ?? 0.5) - (summary?.disputeRate ?? 0)).toFixed(1)}% better` : `${((summary?.disputeRate ?? 0) - (benchmark?.avgDisputeRate ?? 0.5)).toFixed(1)}% higher`})
+                        <span style={{ fontWeight: "700", color: liveDisputeRate <= (benchmark?.avgDisputeRate ?? 0.5) ? "#16a34a" : "#dc2626" }}>
+                          {benchmark?.avgDisputeRate ?? 0.5}% ({((benchmark?.avgDisputeRate ?? 0.5) - liveDisputeRate) >= 0 ? `${((benchmark?.avgDisputeRate ?? 0.5) - liveDisputeRate).toFixed(1)}% better` : `${(liveDisputeRate - (benchmark?.avgDisputeRate ?? 0.5)).toFixed(1)}% higher`})
                         </span>
                       </div>
                     )}
@@ -2426,7 +2431,7 @@ export default function PerformancePage() {
                 {/* Footer */}
                 <div style={{ display: "flex", alignItems: "center", gap: "5px", paddingTop: "10px", marginTop: "12px", borderTop: "1px solid #f1f5f9", fontSize: "11px", fontWeight: "600", color: "#16a34a" }}>
                   <CheckCircle2 size={12} />
-                  <span>{totalDisputesCount === 0 ? "Zero disputes logged" : `${totalDisputesCount} active disputes`}</span>
+                  <span>{totalDisputesCount === 0 ? "Zero disputes logged" : `${totalDisputesCount} active disputes`} (Pillar: {disputeScore}/100)</span>
                 </div>
               </div>
 
