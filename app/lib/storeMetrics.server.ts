@@ -1,4 +1,5 @@
 import prisma from "../db.server";
+import type { AppSettings, Supplier, SupplierAlert } from "@prisma/client";
 import type { CollectedVendorData } from "./vendorCollector.server";
 
 export interface AdminGraphQLResponse {
@@ -144,10 +145,28 @@ export async function fetchAndSyncStoreDetails(admin: AdminClient, shop: string)
     );
     const ordersJson = await ordersRes.json();
     const ordersData = ordersJson.data?.orders?.nodes || [];
-    completedOrdersCount = ordersData.length;
+    const fulfilledCount = ordersData.filter(
+      (o: { displayFulfillmentStatus?: string }) => o.displayFulfillmentStatus === "FULFILLED"
+    ).length;
+    completedOrdersCount = fulfilledCount > 0 ? fulfilledCount : ordersData.length;
   } catch (err) {
     console.warn("Notice: Orders count query error:", err);
   }
+
+  const currentSettings = await prisma.appSettings.findUnique({
+    where: { shop },
+    select: { completedOrdersCount: true, storeAgeDays: true, storeCreatedAt: true },
+  });
+
+  const finalCompletedOrdersCount = Math.max(
+    currentSettings?.completedOrdersCount || 0,
+    completedOrdersCount
+  );
+  const finalStoreAgeDays = Math.max(
+    currentSettings?.storeAgeDays || 0,
+    storeAgeDays
+  );
+  const finalStoreCreatedAt = storeCreatedAt || currentSettings?.storeCreatedAt || null;
 
   const settings = await prisma.appSettings.upsert({
     where: { shop },
@@ -156,9 +175,9 @@ export async function fetchAndSyncStoreDetails(admin: AdminClient, shop: string)
       myshopifyDomain,
       merchantEmail,
       currencyCode,
-      storeCreatedAt,
-      storeAgeDays,
-      completedOrdersCount,
+      ...(finalStoreCreatedAt ? { storeCreatedAt: finalStoreCreatedAt } : {}),
+      storeAgeDays: finalStoreAgeDays,
+      completedOrdersCount: finalCompletedOrdersCount,
     },
     create: {
       shop,
@@ -166,9 +185,9 @@ export async function fetchAndSyncStoreDetails(admin: AdminClient, shop: string)
       myshopifyDomain,
       merchantEmail,
       currencyCode,
-      storeCreatedAt,
-      storeAgeDays,
-      completedOrdersCount,
+      storeCreatedAt: finalStoreCreatedAt,
+      storeAgeDays: finalStoreAgeDays,
+      completedOrdersCount: finalCompletedOrdersCount,
       onboardingStep: 1,
       onboardingCompleted: false,
       trustScore: 85,
@@ -192,12 +211,52 @@ export async function getOrCreateAppSettings(admin: AdminClient, shop: string) {
   return settings;
 }
 
+interface OverviewCacheData {
+  shop: string;
+  settings: AppSettings | null;
+  suppliers: CollectedVendorData[];
+  summary: StoreOverviewSummary;
+  alerts: Array<SupplierAlert & { supplier: Supplier }>;
+}
+
+interface CacheEntry {
+  timestamp: number;
+  data: OverviewCacheData;
+}
+
+// In-memory overview cache (TTL = 5 minutes)
+const overviewCache = new Map<string, CacheEntry>();
+const CACHE_TTL_MS = 5 * 60 * 1000;
+
+export function invalidateStoreOverviewCache(shop?: string) {
+  if (shop) {
+    for (const key of overviewCache.keys()) {
+      if (key.startsWith(`${shop}:`)) {
+        overviewCache.delete(key);
+      }
+    }
+  } else {
+    overviewCache.clear();
+  }
+}
+
 export async function getStoreOverviewData(
   admin: AdminClient,
   shop: string,
-  days: number = 7
+  days: number = 7,
+  forceSync: boolean = false
 ) {
+  const cacheKey = `${shop}:${days}`;
+  const cached = overviewCache.get(cacheKey);
+
+  // 1. Return from in-memory cache if fresh (retains all products, reviews, and ratings)
+  if (!forceSync && cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+    return cached.data;
+  }
+
   const settings = await getOrCreateAppSettings(admin, shop);
+
+  // 2. Fetch fresh live data from Shopify (includes products, ratings & reviews)
   const { collectAllVendorsData } = await import("./vendorCollector.server");
   const vendorResult = await collectAllVendorsData(admin, shop, days);
 
@@ -262,10 +321,14 @@ export async function getStoreOverviewData(
   );
 
   try {
+    const current = await prisma.appSettings.findUnique({
+      where: { shop },
+      select: { completedOrdersCount: true },
+    });
     await prisma.appSettings.update({
       where: { shop },
       data: {
-        completedOrdersCount: totalCompletedOrders,
+        completedOrdersCount: Math.max(current?.completedOrdersCount || 0, totalCompletedOrders),
         ...(vendorResult.summary.marketplaceTrustScore !== null
           ? { trustScore: vendorResult.summary.marketplaceTrustScore }
           : {}),
@@ -284,13 +347,16 @@ export async function getStoreOverviewData(
     },
   });
 
-  return {
+  const freshResult: OverviewCacheData = {
     shop,
     settings,
     suppliers: vendorResult.suppliers as CollectedVendorData[],
     summary: vendorResult.summary as StoreOverviewSummary,
     alerts,
   };
+
+  overviewCache.set(cacheKey, { timestamp: Date.now(), data: freshResult });
+  return freshResult;
 }
 
 export interface MarketplaceBenchmark {

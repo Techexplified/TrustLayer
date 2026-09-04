@@ -1319,9 +1319,9 @@ export default function Index() {
                                         display: "flex",
                                         alignItems: "center",
                                         gap: "5px",
-                                        backgroundColor: supplier.avgProductRating !== null ? "#fef3c7" : "#f1f5f9",
-                                        color: supplier.avgProductRating !== null ? "#b45309" : "#475569",
-                                        border: supplier.avgProductRating !== null ? "1px solid #fde68a" : "1px solid #e2e8f0",
+                                        backgroundColor: supplier.avgProductRating != null ? "#fef3c7" : "#f1f5f9",
+                                        color: supplier.avgProductRating != null ? "#b45309" : "#475569",
+                                        border: supplier.avgProductRating != null ? "1px solid #fde68a" : "1px solid #e2e8f0",
                                         padding: "4px 10px",
                                         borderRadius: "20px",
                                         fontSize: "12px",
@@ -1330,7 +1330,7 @@ export default function Index() {
                                     >
                                       <span>⭐</span>
                                       <span>
-                                        {supplier.avgProductRating !== null
+                                        {supplier.avgProductRating != null
                                           ? `${supplier.avgProductRating} / 5.0`
                                           : "0 / 5.0"}
                                       </span>

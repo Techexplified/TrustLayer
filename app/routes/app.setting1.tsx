@@ -3,7 +3,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs, HeadersFunction } from "re
 import { redirect, useLoaderData, useFetcher } from "react-router";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-import { getStoreOverviewData } from "../lib/storeMetrics.server";
+import { getStoreOverviewData, fetchAndSyncStoreDetails } from "../lib/storeMetrics.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import {
   ShieldCheck,
@@ -44,10 +44,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   const overviewData = await getStoreOverviewData(admin, shop, 7);
 
   // Sum fulfilled orders across all vendors from fresh Shopify data
-  const completedOrders = (overviewData.suppliers as Array<{ completedOrders?: number }>).reduce(
+  const suppliersCompleted = ((overviewData.suppliers as Array<{ completedOrders?: number }>) || []).reduce(
     (sum, v) => sum + (v.completedOrders || 0),
     0
   );
+
+  const completedOrders = Math.max(settings.completedOrdersCount || 0, suppliersCompleted);
 
   // storeAgeDays: prefer DB value, else compute from storeCreatedAt, else from account creation
   let storeAgeDays = settings.storeAgeDays || 0;
@@ -73,17 +75,36 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const intent = formData.get("intent");
 
   if (intent === "sync") {
-    // Re-run full data sync
-    const overviewData = await getStoreOverviewData(admin, shop, 7);
+    // Re-run full data sync (force live sync)
+    const storeDetails = await fetchAndSyncStoreDetails(admin, shop);
+    const overviewData = await getStoreOverviewData(admin, shop, 7, true);
 
-    // Pull fresh counts from the summary
-    const summary = overviewData.summary;
-    const completedOrders = (summary as { totalOrders?: number })?.totalOrders ?? 0;
+    const suppliersCompleted = ((overviewData.suppliers as Array<{ completedOrders?: number }>) || []).reduce(
+      (sum, v) => sum + (v.completedOrders || 0),
+      0
+    );
+
+    const currentSettings = await prisma.appSettings.findUnique({
+      where: { shop },
+      select: { completedOrdersCount: true, storeAgeDays: true },
+    });
+
+    const completedOrders = Math.max(
+      currentSettings?.completedOrdersCount || 0,
+      storeDetails?.completedOrdersCount || 0,
+      suppliersCompleted
+    );
+
+    const storeAgeDays = Math.max(
+      currentSettings?.storeAgeDays || 0,
+      storeDetails?.storeAgeDays || 0
+    );
 
     const updated = await prisma.appSettings.update({
       where: { shop },
       data: {
         completedOrdersCount: completedOrders,
+        ...(storeAgeDays > 0 ? { storeAgeDays } : {}),
         updatedAt: new Date(),
       },
     });
@@ -93,6 +114,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       intent: "sync",
       lastSynced: updated.updatedAt.toISOString(),
       completedOrders,
+      storeAgeDays: updated.storeAgeDays || storeAgeDays,
       summary: overviewData.summary,
     };
   }
@@ -166,6 +188,9 @@ export default function Setting1() {
   const completedOrders: number =
     (fetcher.data as { completedOrders?: number } | null)?.completedOrders ?? loaderData.completedOrders;
 
+  const storeAgeDays: number =
+    (fetcher.data as { storeAgeDays?: number } | null)?.storeAgeDays ?? loaderData.storeAgeDays;
+
   const isSyncing = fetcher.state !== "idle" && fetcher.formData?.get("intent") === "sync";
 
   // ── Helpers ─────────────────────────────────────────────────────────
@@ -201,9 +226,9 @@ export default function Setting1() {
   const ordersTarget = 20;
   const ordersPct = Math.min(100, Math.round((completedOrders / ordersTarget) * 100));
   const ageTarget = 30;
-  const agePct = Math.min(100, Math.round((loaderData.storeAgeDays / ageTarget) * 100));
+  const agePct = Math.min(100, Math.round((storeAgeDays / ageTarget) * 100));
   const ordersMet = completedOrders >= ordersTarget;
-  const ageMet = loaderData.storeAgeDays >= ageTarget;
+  const ageMet = storeAgeDays >= ageTarget;
   const bothMet = ordersMet && ageMet;
   const conditionsMetCount = (ordersMet ? 1 : 0) + (ageMet ? 1 : 0);
 
@@ -413,7 +438,7 @@ export default function Setting1() {
                   iconColor="#2563eb"
                   title="30 days store age"
                   desc="Minimum number of days your store must be active."
-                  current={loaderData.storeAgeDays}
+                  current={storeAgeDays}
                   target={ageTarget}
                   pct={agePct}
                   barColor="#3b82f6"
@@ -672,7 +697,7 @@ export default function Setting1() {
           flexWrap: "wrap",
           gap: "8px",
         }}>
-          <div>TrustLayer v1.0.0 | Built for Shopify</div>
+          <div>TrustLayer v1.0.0</div>
           <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
             <ShieldCheck size={13} color="#94a3b8" />
             <span>All store trust calculations are cryptographically validated</span>

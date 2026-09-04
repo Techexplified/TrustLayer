@@ -3,7 +3,7 @@ import type { ActionFunctionArgs, LoaderFunctionArgs, HeadersFunction } from "re
 import { redirect, useLoaderData, useFetcher } from "react-router";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-import { getStoreOverviewData } from "../lib/storeMetrics.server";
+import { getStoreOverviewData, invalidateStoreOverviewCache } from "../lib/storeMetrics.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
 export const headers: HeadersFunction = (headersArgs) => {
@@ -25,10 +25,26 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   const overviewData = await getStoreOverviewData(admin, shop, 7);
 
+  // Calculate completed orders & storeAgeDays for eligibility check (20 orders & 30 days active store)
+  const completedOrders = (overviewData.suppliers as Array<{ completedOrders?: number }>).reduce(
+    (sum, v) => sum + (v.completedOrders || 0),
+    0
+  );
+  const completedOrdersCount = Math.max(settings.completedOrdersCount || 0, completedOrders);
+
+  let storeAgeDays = settings.storeAgeDays || 0;
+  if (storeAgeDays === 0) {
+    const ref = (settings as { storeCreatedAt?: Date | null }).storeCreatedAt ?? settings.createdAt;
+    storeAgeDays = Math.max(1, Math.floor((Date.now() - new Date(ref).getTime()) / (1000 * 60 * 60 * 24)));
+  }
+
+  const isEligible = completedOrdersCount >= 20 && storeAgeDays >= 30;
+
   return {
     shop,
     settings,
     summary: overviewData.summary,
+    isEligible,
   };
 };
 
@@ -37,6 +53,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const shop = session.shop;
   const formData = await request.formData();
 
+  const badgeEnabled = formData.get("badgeEnabled") === "true";
   const showOnProductPages = formData.get("showOnProductPages") === "true";
   const showOnSellerProfile = formData.get("showOnSellerProfile") === "true";
   const showOnCartPage = formData.get("showOnCartPage") === "true";
@@ -49,6 +66,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const updated = await prisma.appSettings.update({
     where: { shop },
     data: {
+      badgeEnabled,
       showOnProductPages,
       showOnSellerProfile,
       showOnCartPage,
@@ -61,15 +79,18 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     },
   });
 
+  invalidateStoreOverviewCache(shop);
+
   return { success: true, settings: updated };
 };
 
 export default function WidgetSettings() {
-  const { shop, settings, summary } = useLoaderData<typeof loader>();
+  const { shop, settings, summary, isEligible } = useLoaderData<typeof loader>();
   const fetcher = useFetcher<typeof action>();
 
   // Stored saved state
   const [savedConfig, setSavedConfig] = useState({
+    badgeEnabled: (settings as { badgeEnabled?: boolean } | null)?.badgeEnabled ?? true,
     showOnProductPages: (settings as { showOnProductPages?: boolean } | null)?.showOnProductPages ?? true,
     showOnSellerProfile: (settings as { showOnSellerProfile?: boolean } | null)?.showOnSellerProfile ?? true,
     showOnCartPage: (settings as { showOnCartPage?: boolean } | null)?.showOnCartPage ?? false,
@@ -81,6 +102,7 @@ export default function WidgetSettings() {
   });
 
   // Current working form state
+  const [badgeEnabled, setBadgeEnabled] = useState(savedConfig.badgeEnabled);
   const [showOnProductPages, setShowOnProductPages] = useState(savedConfig.showOnProductPages);
   const [showOnSellerProfile, setShowOnSellerProfile] = useState(savedConfig.showOnSellerProfile);
   const [showOnCartPage, setShowOnCartPage] = useState(savedConfig.showOnCartPage);
@@ -92,7 +114,7 @@ export default function WidgetSettings() {
 
   // UI state
   const [previewDevice, setPreviewDevice] = useState<"desktop" | "mobile">("desktop");
-  const [previewTab, setPreviewTab] = useState<"product" | "seller" | "cart">("product");
+  const [previewTab, setPreviewTab] = useState<"product" | "cart">("product");
   const [isPositionMenuOpen, setIsPositionMenuOpen] = useState(false);
   const [showToast, setShowToast] = useState(false);
   const positionMenuRef = useRef<HTMLDivElement>(null);
@@ -101,6 +123,7 @@ export default function WidgetSettings() {
   useEffect(() => {
     if (fetcher.data?.success && fetcher.data.settings) {
       const s = fetcher.data.settings as {
+        badgeEnabled?: boolean;
         showOnProductPages: boolean;
         showOnSellerProfile: boolean;
         showOnCartPage: boolean;
@@ -111,6 +134,7 @@ export default function WidgetSettings() {
         showNumericScore: boolean;
       };
       const newConfig = {
+        badgeEnabled: s.badgeEnabled ?? true,
         showOnProductPages: s.showOnProductPages,
         showOnSellerProfile: s.showOnSellerProfile,
         showOnCartPage: s.showOnCartPage,
@@ -121,6 +145,7 @@ export default function WidgetSettings() {
         showNumericScore: s.showNumericScore,
       };
       setSavedConfig(newConfig);
+      setBadgeEnabled(newConfig.badgeEnabled);
       setShowOnProductPages(newConfig.showOnProductPages);
       setShowOnSellerProfile(newConfig.showOnSellerProfile);
       setShowOnCartPage(newConfig.showOnCartPage);
@@ -151,6 +176,7 @@ export default function WidgetSettings() {
 
   // Check if form is dirty
   const isDirty =
+    badgeEnabled !== savedConfig.badgeEnabled ||
     showOnProductPages !== savedConfig.showOnProductPages ||
     showOnSellerProfile !== savedConfig.showOnSellerProfile ||
     showOnCartPage !== savedConfig.showOnCartPage ||
@@ -161,6 +187,7 @@ export default function WidgetSettings() {
     showNumericScore !== savedConfig.showNumericScore;
 
   const handleDiscard = () => {
+    setBadgeEnabled(savedConfig.badgeEnabled);
     setShowOnProductPages(savedConfig.showOnProductPages);
     setShowOnSellerProfile(savedConfig.showOnSellerProfile);
     setShowOnCartPage(savedConfig.showOnCartPage);
@@ -173,6 +200,7 @@ export default function WidgetSettings() {
 
   const handleSave = () => {
     const fd = new FormData();
+    fd.append("badgeEnabled", String(badgeEnabled));
     fd.append("showOnProductPages", String(showOnProductPages));
     fd.append("showOnSellerProfile", String(showOnSellerProfile));
     fd.append("showOnCartPage", String(showOnCartPage));
@@ -188,8 +216,8 @@ export default function WidgetSettings() {
   const positionOptions = [
     { id: "PRODUCT_PAGE_BELOW_ATC", label: "Below Add to Cart", icon: "⬇" },
     { id: "PRODUCT_PAGE_ABOVE_ATC", label: "Above Add to Cart", icon: "⬆" },
-    { id: "PRODUCT_PAGE_BELOW_DESC", label: "Below product description", icon: "📄" },
-    { id: "PRODUCT_PAGE_STICKY_BOTTOM", label: "Sticky bottom bar", icon: "📌" },
+    { id: "PRODUCT_PAGE_BELOW_DESC", label: "Below product description", icon: "📄" }
+    // { id: "PRODUCT_PAGE_STICKY_BOTTOM", label: "Sticky bottom bar", icon: "📌" },
   ];
 
   const currentPositionObj =
@@ -368,30 +396,32 @@ export default function WidgetSettings() {
               <span>Last saved {lastSavedTime}</span>
             </div>
 
-            <button
-              type="button"
-              onClick={() => window.open(`https://${shop}`, "_blank")}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-                backgroundColor: "#ffffff",
-                border: "1px solid #e2e8f0",
-                borderRadius: "8px",
-                padding: "7px 14px",
-                fontSize: "12.5px",
-                fontWeight: "600",
-                color: "#334155",
-                cursor: "pointer",
-                boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
-              }}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2">
-                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                <circle cx="12" cy="12" r="3" />
-              </svg>
-              <span>Preview on store</span>
-            </button>
+            {isEligible && (
+              <button
+                type="button"
+                onClick={() => window.open(`https://${shop}`, "_blank")}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  backgroundColor: "#ffffff",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: "8px",
+                  padding: "7px 14px",
+                  fontSize: "12.5px",
+                  fontWeight: "600",
+                  color: "#334155",
+                  cursor: "pointer",
+                  boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+                <span>Preview on store</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -401,6 +431,101 @@ export default function WidgetSettings() {
           {/* ════════════ LEFT COLUMN: CONFIGURATION ════════════ */}
           <div style={{ display: "flex", flexDirection: "column", gap: "22px" }}>
             
+            {/* 0. MASTER TOGGLE: ENABLE BADGE */}
+            <div
+              style={{
+                backgroundColor: "#ffffff",
+                borderRadius: "14px",
+                border: badgeEnabled ? "1.5px solid #3b82f6" : "1px solid #e2e8f0",
+                padding: "18px 22px",
+                boxShadow: badgeEnabled
+                  ? "0 4px 12px -2px rgba(37, 99, 235, 0.08)"
+                  : "0 1px 3px rgba(0,0,0,0.02)",
+                transition: "all 0.2s ease",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+                  <div
+                    style={{
+                      width: "42px",
+                      height: "42px",
+                      borderRadius: "10px",
+                      backgroundColor: badgeEnabled ? "#eff6ff" : "#f1f5f9",
+                      color: badgeEnabled ? "#2563eb" : "#64748b",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "20px",
+                      flexShrink: 0,
+                    }}
+                  >
+                    🛡️
+                  </div>
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <span style={{ fontSize: "15px", fontWeight: "700", color: "#0f172a" }}>
+                        Enable Badge
+                      </span>
+                      <span
+                        style={{
+                          fontSize: "10.5px",
+                          fontWeight: "700",
+                          backgroundColor: badgeEnabled ? "#dcfce7" : "#f1f5f9",
+                          color: badgeEnabled ? "#15803d" : "#64748b",
+                          padding: "2px 8px",
+                          borderRadius: "10px",
+                        }}
+                      >
+                        {badgeEnabled ? "● Active on store" : "○ Turned off"}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: "12.5px", color: "#64748b", marginTop: "2px" }}>
+                      Master switch to enable or disable the TrustLayer badge across your storefront
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  role="switch"
+                  aria-checked={badgeEnabled}
+                  tabIndex={0}
+                  onClick={() => setBadgeEnabled(!badgeEnabled)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setBadgeEnabled(!badgeEnabled);
+                    }
+                  }}
+                  style={{
+                    width: "48px",
+                    height: "28px",
+                    borderRadius: "14px",
+                    backgroundColor: badgeEnabled ? "#2563eb" : "#cbd5e1",
+                    padding: "3px",
+                    display: "flex",
+                    alignItems: "center",
+                    cursor: "pointer",
+                    transition: "background-color 0.2s ease",
+                    boxSizing: "border-box",
+                    flexShrink: 0,
+                  }}
+                >
+                  <div
+                    style={{
+                      width: "22px",
+                      height: "22px",
+                      borderRadius: "50%",
+                      backgroundColor: "#ffffff",
+                      boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
+                      transform: badgeEnabled ? "translateX(20px)" : "translateX(0px)",
+                      transition: "transform 0.2s ease",
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+
             {/* 1. DISPLAY SETTINGS */}
             <div
               style={{
@@ -409,6 +534,8 @@ export default function WidgetSettings() {
                 border: "1px solid #e2e8f0",
                 padding: "20px 22px",
                 boxShadow: "0 1px 3px rgba(0,0,0,0.02)",
+                opacity: badgeEnabled ? 1 : 0.65,
+                transition: "opacity 0.2s ease",
               }}
             >
               <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
@@ -498,38 +625,6 @@ export default function WidgetSettings() {
                   </span>
                 </label>
 
-                {/* Option 3: Seller profile / about section */}
-                <label
-                  style={{
-                    display: "flex",
-                    alignItems: "flex-start",
-                    justifyContent: "space-between",
-                    backgroundColor: showOnSellerProfile ? "#f8fafc" : "#ffffff",
-                    border: `1px solid ${showOnSellerProfile ? "#cbd5e1" : "#e2e8f0"}`,
-                    borderRadius: "10px",
-                    padding: "12px 14px",
-                    cursor: "pointer",
-                    transition: "all 0.15s ease",
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
-                    <input
-                      type="checkbox"
-                      checked={showOnSellerProfile}
-                      onChange={(e) => setShowOnSellerProfile(e.target.checked)}
-                      style={{ marginTop: "3px", width: "16px", height: "16px", accentColor: "#4f46e5", cursor: "pointer" }}
-                    />
-                    <div>
-                      <span style={{ fontSize: "13.5px", fontWeight: "700", color: "#0f172a" }}>Seller profile / about section</span>
-                      <div style={{ fontSize: "12px", color: "#64748b", marginTop: "2px" }}>
-                        Displays an expanded trust card on your public seller profile page
-                      </div>
-                    </div>
-                  </div>
-                  <span style={{ backgroundColor: "#f0fdf4", color: "#166534", fontSize: "11px", fontWeight: "700", padding: "3px 8px", borderRadius: "8px", whiteSpace: "nowrap" }}>
-                    👤 Builds credibility
-                  </span>
-                </label>
 
                 {/* Option 4: Cart page */}
                 <label
@@ -1113,11 +1208,19 @@ export default function WidgetSettings() {
               >
                 <div>
                   <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                    <span style={{ width: "8px", height: "8px", borderRadius: "50%", backgroundColor: "#3b82f6" }} />
+                    <span
+                      style={{
+                        width: "8px",
+                        height: "8px",
+                        borderRadius: "50%",
+                        backgroundColor: badgeEnabled ? "#16a34a" : "#94a3b8",
+                        boxShadow: badgeEnabled ? "0 0 0 3px rgba(22, 163, 74, 0.15)" : "none",
+                      }}
+                    />
                     <span style={{ fontSize: "13px", fontWeight: "800", color: "#0f172a" }}>Live Preview</span>
                   </div>
                   <div style={{ fontSize: "11px", color: "#64748b", marginTop: "2px" }}>
-                    {previewTab === "product" ? `Product Page · ${currentPositionObj.label}` : previewTab === "seller" ? "Seller Profile Page" : "Cart Page"}
+                     {previewTab === "product" ? `Product Page · ${currentPositionObj.label}` : "Cart Page"}
                   </div>
                 </div>
 
@@ -1179,23 +1282,6 @@ export default function WidgetSettings() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setPreviewTab("seller")}
-                  style={{
-                    flex: 1,
-                    padding: "8px 10px",
-                    fontSize: "12px",
-                    fontWeight: previewTab === "seller" ? "700" : "500",
-                    color: previewTab === "seller" ? "#4f46e5" : "#64748b",
-                    border: "none",
-                    borderBottom: previewTab === "seller" ? "2px solid #4f46e5" : "2px solid transparent",
-                    backgroundColor: "transparent",
-                    cursor: "pointer",
-                  }}
-                >
-                  👤 Seller Profile
-                </button>
-                <button
-                  type="button"
                   onClick={() => setPreviewTab("cart")}
                   style={{
                     flex: 1,
@@ -1252,8 +1338,6 @@ export default function WidgetSettings() {
                     <span style={{ marginLeft: "4px" }}>
                       {previewTab === "product"
                         ? "🔒 your-store.com/products/running-shoes"
-                        : previewTab === "seller"
-                        ? `🔒 your-store.com/sellers/${storeName.toLowerCase().replace(/\s+/g, "-")}`
                         : "🔒 your-store.com/cart"}
                     </span>
                   </div>
@@ -1261,7 +1345,30 @@ export default function WidgetSettings() {
                   {/* ── TAB 1: PRODUCT PAGE PREVIEW ── */}
                   {previewTab === "product" && (
                     <div style={{ padding: "16px" }}>
-                      {!showOnProductPages ? (
+                      {!badgeEnabled ? (
+                        <div style={{ padding: "30px 15px", textAlign: "center", color: "#64748b", fontSize: "12px" }}>
+                          <div style={{ fontSize: "24px", marginBottom: "6px" }}>🛡️</div>
+                          <div style={{ fontWeight: "700", color: "#0f172a" }}>TrustLayer badge is turned off</div>
+                          <div style={{ marginTop: "4px" }}>Turn on &quot;Enable Badge&quot; above to display your badge to shoppers.</div>
+                          <button
+                            type="button"
+                            onClick={() => setBadgeEnabled(true)}
+                            style={{
+                              marginTop: "12px",
+                              backgroundColor: "#2563eb",
+                              color: "#ffffff",
+                              border: "none",
+                              borderRadius: "6px",
+                              padding: "6px 14px",
+                              fontSize: "12px",
+                              fontWeight: "600",
+                              cursor: "pointer",
+                            }}
+                          >
+                            Enable Badge
+                          </button>
+                        </div>
+                      ) : !showOnProductPages ? (
                         <div style={{ padding: "30px 15px", textAlign: "center", color: "#64748b", fontSize: "12px" }}>
                           <div style={{ fontSize: "24px", marginBottom: "6px" }}>👁️‍🗨️</div>
                           <div style={{ fontWeight: "700", color: "#0f172a" }}>Badge disabled on product pages</div>
@@ -1431,60 +1538,17 @@ export default function WidgetSettings() {
                     </div>
                   )}
 
-                  {/* ── TAB 2: SELLER PROFILE PREVIEW ── */}
-                  {previewTab === "seller" && (
-                    <div style={{ padding: "16px" }}>
-                      {!showOnSellerProfile ? (
-                        <div style={{ padding: "30px 15px", textAlign: "center", color: "#64748b", fontSize: "12px" }}>
-                          <div style={{ fontSize: "24px", marginBottom: "6px" }}>👤</div>
-                          <div style={{ fontWeight: "700", color: "#0f172a" }}>Trust card disabled on seller profile</div>
-                          <div style={{ marginTop: "4px" }}>Enable &quot;Seller profile / about section&quot; in Display Settings.</div>
-                        </div>
-                      ) : (
-                        <div>
-                          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "14px", borderBottom: "1px solid #f1f5f9", paddingBottom: "12px" }}>
-                            <div style={{ width: "42px", height: "42px", borderRadius: "8px", backgroundColor: "#4f46e5", color: "#ffffff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "18px", fontWeight: "800" }}>
-                              {storeName.charAt(0)}
-                            </div>
-                            <div>
-                              <div style={{ fontSize: "15px", fontWeight: "800", color: "#0f172a" }}>{storeName}</div>
-                              <div style={{ fontSize: "11px", color: "#16a34a", fontWeight: "600" }}>✓ Verified TrustLayer Merchant</div>
-                            </div>
-                          </div>
-
-                          <div style={{ border: "1px solid #e2e8f0", borderRadius: "10px", padding: "12px", backgroundColor: "#faf5ff", marginBottom: "12px" }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                                <span>🛡️</span>
-                                <span style={{ fontWeight: "800", fontSize: "14px", color: "#0f172a" }}>
-                                  {showNumericScore ? `${displayScore}/100 Trust Score` : `${tierName} Rating`}
-                                </span>
-                              </div>
-                              <span style={{ backgroundColor: "#ecfdf5", color: "#059669", fontSize: "10px", fontWeight: "700", padding: "2px 6px", borderRadius: "6px" }}>
-                                Top Tier
-                              </span>
-                            </div>
-
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px", fontSize: "10.5px", borderTop: "1px solid #e9d5ff", paddingTop: "8px" }}>
-                              <div>📦 On-Time: <strong>{onTimeRate}%</strong></div>
-                              <div>⟳ Return Rate: <strong>{returnRate}%</strong></div>
-                              <div>⭐ Satisfaction: <strong>4.8 ★</strong></div>
-                              <div>⏱️ Dispute: <strong>0.0%</strong></div>
-                            </div>
-                          </div>
-
-                          <div style={{ fontSize: "11px", color: "#64748b", lineHeight: "1.4" }}>
-                            Verified seller offering genuine catalog listings backed by real fulfillment monitoring.
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
 
                   {/* ── TAB 3: CART DRAWER PREVIEW ── */}
                   {previewTab === "cart" && (
                     <div style={{ padding: "16px" }}>
-                      {!showOnCartPage ? (
+                      {!badgeEnabled ? (
+                        <div style={{ padding: "30px 15px", textAlign: "center", color: "#64748b", fontSize: "12px" }}>
+                          <div style={{ fontSize: "24px", marginBottom: "6px" }}>🛡️</div>
+                          <div style={{ fontWeight: "700", color: "#0f172a" }}>TrustLayer badge is turned off</div>
+                          <div style={{ marginTop: "4px" }}>Turn on &quot;Enable Badge&quot; above to display the badge in cart.</div>
+                        </div>
+                      ) : !showOnCartPage ? (
                         <div style={{ padding: "30px 15px", textAlign: "center", color: "#64748b", fontSize: "12px" }}>
                           <div style={{ fontSize: "24px", marginBottom: "6px" }}>🛒</div>
                           <div style={{ fontWeight: "700", color: "#0f172a" }}>Trust badge disabled in cart</div>
@@ -1661,7 +1725,7 @@ function RenderBadgePreview({
           <span style={{ backgroundColor: "#ecfdf5", color: "#059669", fontSize: "10.5px", fontWeight: "700", padding: "1px 6px", borderRadius: "4px" }}>
             {tierName}
           </span>
-          <span style={{ fontSize: "11px", color: "#64748b" }}>· by {storeName.split(" ")[0]}</span>
+          <span style={{ fontSize: "11px", color: "#64748b" }}> by - {storeName.split(" ")[0]}</span>
         </div>
         <span style={{ color: "#2563eb", fontSize: "10px", fontWeight: "700", display: "flex", alignItems: "center", gap: "3px", flexShrink: 0 }}>
           🛡️ TrustLayer

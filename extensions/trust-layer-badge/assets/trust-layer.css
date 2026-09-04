@@ -17,6 +17,34 @@
   box-sizing: border-box;
 }
 
+/* Strictly hide in Header, Footer, Announcement Bar, or outside Product Information */
+header .trust-layer-block-root,
+footer .trust-layer-block-root,
+.header .trust-layer-block-root,
+.footer .trust-layer-block-root,
+.announcement-bar .trust-layer-block-root,
+[id*="header"] .trust-layer-block-root,
+[id*="footer"] .trust-layer-block-root,
+[id*="announcement"] .trust-layer-block-root,
+.section-header .trust-layer-block-root,
+.section-footer .trust-layer-block-root,
+.header-wrapper .trust-layer-block-root,
+.footer-wrapper .trust-layer-block-root {
+  display: none !important;
+  visibility: hidden !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* Strictly enforce single badge instance: hide any duplicate blocks */
+.trust-layer-block-root ~ .trust-layer-block-root,
+.tl-badge-container ~ .tl-badge-container {
+  display: none !important;
+}
+
 /* 1. Full Badge Style */
 .tl-badge-full {
   background-color: #ffffff;
