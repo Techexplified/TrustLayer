@@ -57,16 +57,33 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     // 2. Fetch live products, orders, fulfillments partitioned by vendor
     const vendorResult = await collectAllVendorsData(admin, session.shop);
 
-    await prisma.appSettings.upsert({
+    const suppliersCompleted = (vendorResult.suppliers || []).reduce(
+      (sum, v) => sum + (v.completedOrders || 0),
+      0
+    );
+
+    const finalCompletedOrders = Math.max(
+      updatedSettings?.completedOrdersCount || 0,
+      suppliersCompleted
+    );
+
+    const savedSettings = await prisma.appSettings.upsert({
       where: { shop: session.shop },
-      update: { onboardingStep: 3 },
-      create: { shop: session.shop, onboardingStep: 3 },
+      update: {
+        onboardingStep: 3,
+        completedOrdersCount: finalCompletedOrders,
+      },
+      create: {
+        shop: session.shop,
+        onboardingStep: 3,
+        completedOrdersCount: finalCompletedOrders,
+      },
     });
 
     return {
       success: true,
       connected: true,
-      settings: updatedSettings,
+      settings: savedSettings,
       summary: vendorResult.summary,
       suppliersCount: vendorResult.suppliers.length,
       step: 3,
@@ -222,11 +239,19 @@ export default function OnboardingWizard() {
   };
 
   // Eligibility Progress
-  const completedOrders = settings.completedOrdersCount || 12;
+  const completedOrders = settings?.completedOrdersCount ?? 0;
   const targetOrders = 20;
   const ordersPercent = Math.min(100, Math.round((completedOrders / targetOrders) * 100));
 
-  const storeAgeDays = settings.storeAgeDays || 18;
+  let storeAgeDays = settings?.storeAgeDays ?? 0;
+  if (storeAgeDays === 0) {
+    const ref =
+      (settings as { storeCreatedAt?: Date | null } | null)?.storeCreatedAt ??
+      (settings as { createdAt?: Date } | null)?.createdAt;
+    if (ref) {
+      storeAgeDays = Math.max(1, Math.floor((Date.now() - new Date(ref).getTime()) / (1000 * 60 * 60 * 24)));
+    }
+  }
   const targetAgeDays = 30;
   const agePercent = Math.min(100, Math.round((storeAgeDays / targetAgeDays) * 100));
 
@@ -1551,3 +1576,18 @@ export default function OnboardingWizard() {
     </div>
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
