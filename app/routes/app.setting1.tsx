@@ -77,7 +77,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   if (intent === "sync") {
     // Re-run full data sync (force live sync)
     const storeDetails = await fetchAndSyncStoreDetails(admin, shop);
-    const overviewData = await getStoreOverviewData(admin, shop, 7, true);
+    const overviewData = await getStoreOverviewData(admin, shop, 0, true);
 
     const suppliersCompleted = ((overviewData.suppliers as Array<{ completedOrders?: number }>) || []).reduce(
       (sum, v) => sum + (v.completedOrders || 0),

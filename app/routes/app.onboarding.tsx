@@ -4,8 +4,7 @@ import { redirect, useLoaderData, useNavigate, useFetcher } from "react-router";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
-import { fetchAndSyncStoreDetails } from "../lib/storeMetrics.server";
-import { collectAllVendorsData } from "../lib/vendorCollector.server";
+import { fetchAndSyncStoreDetails, getStoreOverviewData } from "../lib/storeMetrics.server";
 import {
   Star,
   Package,
@@ -54,10 +53,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   if (intent === "connect_store") {
     // 1. Fetch live shop details from Shopify GraphQL
     const updatedSettings = await fetchAndSyncStoreDetails(admin, session.shop);
-    // 2. Fetch live products, orders, fulfillments partitioned by vendor
-    const vendorResult = await collectAllVendorsData(admin, session.shop);
 
-    const suppliersCompleted = (vendorResult.suppliers || []).reduce(
+    // 2. Run an all-time (days=0) baseline sync so vendor trust scores are stored
+    //    in the DB immediately — not filtered to any date window.
+    const overviewData = await getStoreOverviewData(admin, session.shop, 0, true);
+
+    const suppliersCompleted = (overviewData.suppliers || []).reduce(
       (sum, v) => sum + (v.completedOrders || 0),
       0
     );
@@ -84,13 +85,14 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       success: true,
       connected: true,
       settings: savedSettings,
-      summary: vendorResult.summary,
-      suppliersCount: vendorResult.suppliers.length,
+      summary: overviewData.summary,
+      suppliersCount: overviewData.suppliers.length,
       step: 3,
     };
   }
 
   if (intent === "finish") {
+    // Mark onboarding as complete
     await prisma.appSettings.upsert({
       where: { shop: session.shop },
       update: {
@@ -107,6 +109,12 @@ export const action = async ({ request }: ActionFunctionArgs) => {
         badgePlacement,
       },
     });
+
+    // Store the overall (all-time) vendor data in DB as the first baseline sync.
+    // Fire-and-forget so the redirect is not delayed.
+    getStoreOverviewData(admin, session.shop, 0, true).catch((e) =>
+      console.warn("Onboarding finish baseline sync failed:", e)
+    );
 
     return { success: true, completed: true };
   }

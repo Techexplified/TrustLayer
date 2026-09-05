@@ -1,4 +1,4 @@
-import prisma from "../db.server";
+﻿import prisma from "../db.server";
 import type { AppSettings, Supplier, SupplierAlert } from "@prisma/client";
 import type { CollectedVendorData } from "./vendorCollector.server";
 
@@ -249,102 +249,174 @@ export async function getStoreOverviewData(
   const cacheKey = `${shop}:${days}`;
   const cached = overviewCache.get(cacheKey);
 
-  // 1. Return from in-memory cache if fresh (retains all products, reviews, and ratings)
+  // 1. Return from in-memory cache if fresh
   if (!forceSync && cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
     return cached.data;
   }
 
   const settings = await getOrCreateAppSettings(admin, shop);
 
-  // 2. Fetch fresh live data from Shopify (includes products, ratings & reviews)
   const { collectAllVendorsData } = await import("./vendorCollector.server");
-  const vendorResult = await collectAllVendorsData(admin, shop, days);
 
-  // Persist live collected vendor metrics into DB so widget & proxy always serve fresh overview metrics
-  for (const v of vendorResult.suppliers) {
+  // ── BASELINE SYNC STRATEGY ────────────────────────────────────────────────
+  // The DB always stores the OVERALL (all-time) trust score for each vendor.
+  // This means any new order, return, fulfillment, or dispute that happens
+  // on the store is captured on the next sync -- not just within a date window.
+  //
+  // Rules:
+  //  * days === 0 or forceSync  -- synchronous all-time baseline fetch + DB write
+  //  * days === 7 / 30 / 90    -- windowed fetch for UI display (no DB write)
+  //                              + background all-time baseline sync -> DB write
+  //                              so the DB always stays current with store events
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const isBaselineSync = days === 0 || forceSync;
+
+  // Shared helper: upsert all vendor rows + update AppSettings
+  async function persistBaselineToDb(
+    suppliers: CollectedVendorData[],
+    summary: StoreOverviewSummary
+  ) {
+    await Promise.all(
+      suppliers.map(async (v) => {
+        try {
+          await prisma.supplier.upsert({
+            where: { shop_vendorName: { shop, vendorName: v.vendorName } },
+            update: {
+              totalProducts: v.totalProducts,
+              totalInventory: v.totalInventory,
+              totalOrders: v.totalOrders,
+              completedOrders: v.completedOrders,
+              totalUnitsSold: v.totalUnitsSold,
+              totalRevenue: v.totalRevenue,
+              avgFulfillmentHours: v.avgFulfillmentHours,
+              onTimeDeliveryRate: v.onTimeDeliveryRate !== null ? v.onTimeDeliveryRate : 100,
+              refundedUnitsCount: v.refundedUnitsCount,
+              returnRate: v.returnRate,
+              disputedOrdersCount: v.disputedOrdersCount,
+              disputeRate: v.disputeRate,
+              csatRating: v.csatRating !== null ? v.csatRating : 0.0,
+              trustScore: v.trustScore !== null ? v.trustScore : 85,
+              isEligibleForBadge: v.isEligibleForBadge,
+              status: v.status,
+              firstOrderAt: v.firstOrderAt,
+              lastOrderAt: v.lastOrderAt,
+              updatedAt: new Date(),
+            },
+            create: {
+              shop,
+              vendorName: v.vendorName,
+              totalProducts: v.totalProducts,
+              totalInventory: v.totalInventory,
+              totalOrders: v.totalOrders,
+              completedOrders: v.completedOrders,
+              totalUnitsSold: v.totalUnitsSold,
+              totalRevenue: v.totalRevenue,
+              avgFulfillmentHours: v.avgFulfillmentHours,
+              onTimeDeliveryRate: v.onTimeDeliveryRate !== null ? v.onTimeDeliveryRate : 100,
+              refundedUnitsCount: v.refundedUnitsCount,
+              returnRate: v.returnRate,
+              disputedOrdersCount: v.disputedOrdersCount,
+              disputeRate: v.disputeRate,
+              csatRating: v.csatRating !== null ? v.csatRating : 0.0,
+              trustScore: v.trustScore !== null ? v.trustScore : 85,
+              isEligibleForBadge: v.isEligibleForBadge,
+              status: v.status,
+              firstOrderAt: v.firstOrderAt,
+              lastOrderAt: v.lastOrderAt,
+            },
+          });
+        } catch (e) {
+          console.warn("Could not sync supplier:", v.vendorName, e);
+        }
+      })
+    );
+
+    // Persist overall completed orders count + marketplace trust score to AppSettings
+    const totalCompletedOrders = suppliers.reduce(
+      (sum, v) => sum + (v.completedOrders || 0),
+      0
+    );
     try {
-      await prisma.supplier.upsert({
-        where: { shop_vendorName: { shop, vendorName: v.vendorName } },
-        update: {
-          totalProducts: v.totalProducts,
-          totalInventory: v.totalInventory,
-          totalOrders: v.totalOrders,
-          completedOrders: v.completedOrders,
-          totalUnitsSold: v.totalUnitsSold,
-          totalRevenue: v.totalRevenue,
-          avgFulfillmentHours: v.avgFulfillmentHours,
-          onTimeDeliveryRate: v.onTimeDeliveryRate !== null ? v.onTimeDeliveryRate : 100,
-          refundedUnitsCount: v.refundedUnitsCount,
-          returnRate: v.returnRate,
-          disputedOrdersCount: v.disputedOrdersCount,
-          disputeRate: v.disputeRate,
-          csatRating: v.csatRating !== null ? v.csatRating : 0.0,
-          trustScore: v.trustScore !== null ? v.trustScore : 85,
-          isEligibleForBadge: v.isEligibleForBadge,
-          status: v.status,
-          firstOrderAt: v.firstOrderAt,
-          lastOrderAt: v.lastOrderAt,
-          updatedAt: new Date(),
-        },
-        create: {
-          shop,
-          vendorName: v.vendorName,
-          totalProducts: v.totalProducts,
-          totalInventory: v.totalInventory,
-          totalOrders: v.totalOrders,
-          completedOrders: v.completedOrders,
-          totalUnitsSold: v.totalUnitsSold,
-          totalRevenue: v.totalRevenue,
-          avgFulfillmentHours: v.avgFulfillmentHours,
-          onTimeDeliveryRate: v.onTimeDeliveryRate !== null ? v.onTimeDeliveryRate : 100,
-          refundedUnitsCount: v.refundedUnitsCount,
-          returnRate: v.returnRate,
-          disputedOrdersCount: v.disputedOrdersCount,
-          disputeRate: v.disputeRate,
-          csatRating: v.csatRating !== null ? v.csatRating : 0.0,
-          trustScore: v.trustScore !== null ? v.trustScore : 85,
-          isEligibleForBadge: v.isEligibleForBadge,
-          status: v.status,
-          firstOrderAt: v.firstOrderAt,
-          lastOrderAt: v.lastOrderAt,
+      const current = await prisma.appSettings.findUnique({
+        where: { shop },
+        select: { completedOrdersCount: true },
+      });
+      await prisma.appSettings.update({
+        where: { shop },
+        data: {
+          completedOrdersCount: Math.max(
+            current?.completedOrdersCount || 0,
+            totalCompletedOrders
+          ),
+          ...(summary.marketplaceTrustScore !== null
+            ? { trustScore: summary.marketplaceTrustScore }
+            : {}),
         },
       });
-    } catch (e) {
-      console.warn("Could not sync supplier:", v.vendorName, e);
+    } catch {
+      // non-critical -- ignore
     }
   }
 
-  // Sum completed (fulfilled) orders across all vendors and persist back to AppSettings
-  const totalCompletedOrders = vendorResult.suppliers.reduce(
-    (sum, v) => sum + (v.completedOrders || 0),
-    0
-  );
+  if (isBaselineSync) {
+    // Synchronous path: forceSync or explicit days=0
+    // Fetch all-time data, write to DB, then return.
+    const baselineResult = await collectAllVendorsData(admin, shop, 0);
+    await persistBaselineToDb(
+      baselineResult.suppliers as CollectedVendorData[],
+      baselineResult.summary as StoreOverviewSummary
+    );
 
-  try {
-    const current = await prisma.appSettings.findUnique({
-      where: { shop },
-      select: { completedOrdersCount: true },
+    const alerts = await prisma.supplierAlert.findMany({
+      where: { shop, isResolved: false },
+      orderBy: { createdAt: "desc" },
+      take: 5,
+      include: { supplier: true },
     });
-    await prisma.appSettings.update({
-      where: { shop },
-      data: {
-        completedOrdersCount: Math.max(current?.completedOrdersCount || 0, totalCompletedOrders),
-        ...(vendorResult.summary.marketplaceTrustScore !== null
-          ? { trustScore: vendorResult.summary.marketplaceTrustScore }
-          : {}),
-      },
-    });
-  } catch {
-    // ignore
+
+    const result: OverviewCacheData = {
+      shop,
+      settings,
+      suppliers: baselineResult.suppliers as CollectedVendorData[],
+      summary: baselineResult.summary as StoreOverviewSummary,
+      alerts,
+    };
+    overviewCache.set(cacheKey, { timestamp: Date.now(), data: result });
+    return result;
   }
+
+  // Windowed path: days = 7 / 30 / 90
+  // Always fire a background all-time baseline sync so the DB stays up-to-date
+  // with any new orders, returns, fulfillments, or disputes on the store.
+  collectAllVendorsData(admin, shop, 0)
+    .then(async (baselineResult) => {
+      await persistBaselineToDb(
+        baselineResult.suppliers as CollectedVendorData[],
+        baselineResult.summary as StoreOverviewSummary
+      );
+      // Keep the all-time cache entry warm as well
+      overviewCache.set(`${shop}:0`, {
+        timestamp: Date.now(),
+        data: {
+          shop,
+          settings,
+          suppliers: baselineResult.suppliers as CollectedVendorData[],
+          summary: baselineResult.summary as StoreOverviewSummary,
+          alerts: [],
+        },
+      });
+    })
+    .catch((e) => console.warn("Background baseline sync failed:", e));
+
+  // Fetch windowed data for the actual UI response (display only -- no DB write)
+  const vendorResult = await collectAllVendorsData(admin, shop, days);
 
   const alerts = await prisma.supplierAlert.findMany({
     where: { shop, isResolved: false },
     orderBy: { createdAt: "desc" },
     take: 5,
-    include: {
-      supplier: true,
-    },
+    include: { supplier: true },
   });
 
   const freshResult: OverviewCacheData = {

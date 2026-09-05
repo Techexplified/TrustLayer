@@ -23,7 +23,7 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     return redirect(`/app/onboarding${url.search}`);
   }
 
-  const overviewData = await getStoreOverviewData(admin, shop, 7);
+  const overviewData = await getStoreOverviewData(admin, shop, 0);
 
   // Calculate completed orders & storeAgeDays for eligibility check (20 orders & 30 days active store)
   const completedOrders = (overviewData.suppliers as Array<{ completedOrders?: number }>).reduce(

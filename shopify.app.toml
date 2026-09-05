@@ -40,7 +40,6 @@ api_version = "2026-10"
   topics = [ "orders/create", "orders/updated", "orders/fulfilled", "orders/cancelled" ]
 
 [auth]
-redirect_urls = [ "https://trust-layer-chi.vercel.app/api/auth" ]
 redirect_urls = [
   "https://trust-layer-chi.vercel.app/auth/callback",
   "https://trust-layer-chi.vercel.app/auth/shopify/callback",

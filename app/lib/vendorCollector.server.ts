@@ -40,11 +40,13 @@ export async function collectAllVendorsData(
   shop: string,
   days: number = 7
 ) {
-  // Calculate sinceDate starting from the beginning of the day (days) ago relative to current date
+  // days === 0 means "all time" — no date filter applied (used for baseline DB persistence).
+  // Otherwise calculate sinceDate from the beginning of the day N days ago.
+  const isAllTime = days === 0;
   const now = new Date();
-  const since = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
-  since.setUTCHours(0, 0, 0, 0);
-  const sinceDateFormatted = since.toISOString().split("T")[0]; // YYYY-MM-DD
+  const since = isAllTime ? null : new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+  if (since) since.setUTCHours(0, 0, 0, 0);
+  const sinceDateFormatted = since ? since.toISOString().split("T")[0] : null; // YYYY-MM-DD or null
 
   const vendorMap = new Map<
     string,
@@ -263,7 +265,7 @@ export async function collectAllVendorsData(
         }`,
         {
           variables: {
-            query: `created_at:>='${sinceDateFormatted}'`,
+            query: sinceDateFormatted ? `created_at:>='${sinceDateFormatted}'` : undefined,
           },
         }
       );
