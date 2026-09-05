@@ -1,4 +1,4 @@
-﻿import prisma from "../db.server";
+import prisma from "../db.server";
 import type { AppSettings, Supplier, SupplierAlert } from "@prisma/client";
 import type { CollectedVendorData } from "./vendorCollector.server";
 
@@ -224,14 +224,19 @@ interface CacheEntry {
   data: OverviewCacheData;
 }
 
-// In-memory overview cache (TTL = 5 minutes)
-const overviewCache = new Map<string, CacheEntry>();
+// In-memory overview cache (TTL = 5 minutes) attached to globalThis
+const globalForCache = globalThis as unknown as {
+  __overviewCache?: Map<string, CacheEntry>;
+};
+const overviewCache: Map<string, CacheEntry> =
+  globalForCache.__overviewCache ?? new Map<string, CacheEntry>();
+globalForCache.__overviewCache = overviewCache;
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
 export function invalidateStoreOverviewCache(shop?: string) {
   if (shop) {
-    for (const key of overviewCache.keys()) {
-      if (key.startsWith(`${shop}:`)) {
+    for (const key of Array.from(overviewCache.keys())) {
+      if (key === shop || key.startsWith(`${shop}:`)) {
         overviewCache.delete(key);
       }
     }
@@ -246,15 +251,24 @@ export async function getStoreOverviewData(
   days: number = 7,
   forceSync: boolean = false
 ) {
+  if (forceSync) {
+    invalidateStoreOverviewCache(shop);
+  }
+
   const cacheKey = `${shop}:${days}`;
   const cached = overviewCache.get(cacheKey);
 
-  // 1. Return from in-memory cache if fresh
-  if (!forceSync && cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+  const settings = await getOrCreateAppSettings(admin, shop);
+
+  // Invalidate cache if settings were updated after this cache entry was created
+  const isCacheStale =
+    !cached ||
+    (settings?.updatedAt && cached.timestamp < new Date(settings.updatedAt).getTime());
+
+  // 1. Return from in-memory cache if fresh and not forceSync
+  if (!forceSync && !isCacheStale && Date.now() - cached.timestamp < CACHE_TTL_MS) {
     return cached.data;
   }
-
-  const settings = await getOrCreateAppSettings(admin, shop);
 
   const { collectAllVendorsData } = await import("./vendorCollector.server");
 
@@ -352,6 +366,7 @@ export async function getStoreOverviewData(
           ...(summary.marketplaceTrustScore !== null
             ? { trustScore: summary.marketplaceTrustScore }
             : {}),
+          updatedAt: new Date(),
         },
       });
     } catch {
@@ -375,14 +390,26 @@ export async function getStoreOverviewData(
       include: { supplier: true },
     });
 
+    const currentSettings = await prisma.appSettings.findUnique({
+      where: { shop },
+    });
+
+    const effectiveSummary: StoreOverviewSummary = {
+      ...(baselineResult.summary as StoreOverviewSummary),
+      marketplaceTrustScore:
+        baselineResult.summary.marketplaceTrustScore ?? currentSettings?.trustScore ?? 85,
+    };
+
     const result: OverviewCacheData = {
       shop,
-      settings,
+      settings: currentSettings || settings,
       suppliers: baselineResult.suppliers as CollectedVendorData[],
-      summary: baselineResult.summary as StoreOverviewSummary,
+      summary: effectiveSummary,
       alerts,
     };
-    overviewCache.set(cacheKey, { timestamp: Date.now(), data: result });
+    // Invalidate all windowed cache entries for this shop so they re-fetch on next navigation
+    invalidateStoreOverviewCache(shop);
+    overviewCache.set(`${shop}:0`, { timestamp: Date.now(), data: result });
     return result;
   }
 
@@ -419,9 +446,15 @@ export async function getStoreOverviewData(
     include: { supplier: true },
   });
 
+  const currentSettings = await prisma.appSettings.findUnique({
+    where: { shop },
+  });
+
+  // For the windowed view (7d / 30d / 90d), suppliers and summary strictly reflect
+  // the real-time performance calculated for the selected date period.
   const freshResult: OverviewCacheData = {
     shop,
-    settings,
+    settings: currentSettings || settings,
     suppliers: vendorResult.suppliers as CollectedVendorData[],
     summary: vendorResult.summary as StoreOverviewSummary,
     alerts,

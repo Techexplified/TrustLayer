@@ -1,9 +1,13 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs, HeadersFunction } from "react-router";
 import { redirect, useLoaderData, useFetcher } from "react-router";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
-import { getStoreOverviewData, fetchAndSyncStoreDetails } from "../lib/storeMetrics.server";
+import {
+  getStoreOverviewData,
+  fetchAndSyncStoreDetails,
+  invalidateStoreOverviewCache,
+} from "../lib/storeMetrics.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import {
   ShieldCheck,
@@ -28,7 +32,7 @@ export const headers: HeadersFunction = (headersArgs) => {
 };
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { admin, session } = await authenticate.admin(request);
+  const { session } = await authenticate.admin(request);
   const shop = session.shop;
 
   const settings = await prisma.appSettings.findUnique({
@@ -40,11 +44,12 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     return redirect(`/app/onboarding${url.search}`);
   }
 
-  // Re-sync metrics on load
-  const overviewData = await getStoreOverviewData(admin, shop, 7);
-
-  // Sum fulfilled orders across all vendors from fresh Shopify data
-  const suppliersCompleted = ((overviewData.suppliers as Array<{ completedOrders?: number }>) || []).reduce(
+  // Read completed orders count directly from DB suppliers and settings
+  const suppliers = await prisma.supplier.findMany({
+    where: { shop },
+    select: { completedOrders: true },
+  });
+  const suppliersCompleted = suppliers.reduce(
     (sum, v) => sum + (v.completedOrders || 0),
     0
   );
@@ -64,7 +69,6 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     completedOrders,
     storeAgeDays,
     lastSynced: settings.updatedAt.toISOString(),
-    summary: overviewData.summary,
   };
 };
 
@@ -75,7 +79,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   const intent = formData.get("intent");
 
   if (intent === "sync") {
-    // Re-run full data sync (force live sync)
+    // 1. Invalidate cache before starting sync
+    invalidateStoreOverviewCache(shop);
+
+    // 2. Re-run full data sync (force live sync)
     const storeDetails = await fetchAndSyncStoreDetails(admin, shop);
     const overviewData = await getStoreOverviewData(admin, shop, 0, true);
 
@@ -109,6 +116,9 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       },
     });
 
+    // 3. Invalidate cache after sync so Overview page serves fresh data
+    invalidateStoreOverviewCache(shop);
+
     return {
       success: true,
       intent: "sync",
@@ -123,6 +133,7 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     where: { shop },
     data: { updatedAt: new Date() },
   });
+  invalidateStoreOverviewCache(shop);
   return { success: true, intent: "noop", lastSynced: updated.updatedAt.toISOString() };
 };
 
@@ -192,6 +203,12 @@ export default function Setting1() {
     (fetcher.data as { storeAgeDays?: number } | null)?.storeAgeDays ?? loaderData.storeAgeDays;
 
   const isSyncing = fetcher.state !== "idle" && fetcher.formData?.get("intent") === "sync";
+
+  useEffect(() => {
+    if (fetcher.state === "idle" && fetcher.data && (fetcher.data as { intent?: string })?.intent === "sync") {
+      toast("Store data synchronized successfully!", "success");
+    }
+  }, [fetcher.state, fetcher.data]);
 
   // ── Helpers ─────────────────────────────────────────────────────────
   function toast(msg: string, type: "success" | "error" = "success") {

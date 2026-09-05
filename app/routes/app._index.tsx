@@ -1167,8 +1167,11 @@ export default function Index() {
                     const hasOrders = supplier.totalOrders > 0;
                     const isGood = supplier.status === "GOOD";
                     const isWarning = supplier.status === "NEEDS_ATTENTION";
-                    const statusBg = !hasOrders ? "#f8fafc" : isGood ? "#f0fdf4" : isWarning ? "#fffbeb" : "#fef2f2";
-                    const statusColor = !hasOrders ? "#475569" : isGood ? "#16a34a" : isWarning ? "#d97706" : "#dc2626";
+                    const isCritical = supplier.status === "CRITICAL";
+                    // Only label as New Seller if vendor is unrated/good with 0 orders
+                    const isNewSeller = !isWarning && !isCritical && supplier.completedOrders === 0 && supplier.totalOrders === 0 && (supplier.trustScore === null || supplier.trustScore === 85);
+                    const statusBg = isNewSeller ? "#f8fafc" : isGood ? "#f0fdf4" : isWarning ? "#fffbeb" : "#fef2f2";
+                    const statusColor = isNewSeller ? "#475569" : isGood ? "#16a34a" : isWarning ? "#d97706" : "#dc2626";
 
                     return (
                       <Fragment key={supplier.vendorName}>
@@ -1253,10 +1256,10 @@ export default function Index() {
                                 fontWeight: "700",
                                 backgroundColor: statusBg,
                                 color: statusColor,
-                                border: !hasOrders ? "1px solid #e2e8f0" : "none",
+                                border: isNewSeller ? "1px solid #e2e8f0" : "none",
                               }}
                             >
-                              {!hasOrders ? "● New Seller" : isGood ? "● Good" : isWarning ? "● Attention" : "● Critical"}
+                              {isNewSeller ? "● New Seller" : isGood ? "● Good" : isWarning ? "● Attention" : "● Critical"}
                             </span>
                           </td>
                         </tr>
