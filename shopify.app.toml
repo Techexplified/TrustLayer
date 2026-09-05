@@ -16,6 +16,10 @@ scopes = "read_orders,read_products,write_products,write_metaobjects,write_metao
 api_version = "2026-10"
 
   [[webhooks.subscriptions]]
+  uri = "/webhooks/compliance"
+  compliance_topics = [ "customers/data_request", "customers/redact", "shop/redact" ]
+
+  [[webhooks.subscriptions]]
   uri = "/webhooks/app/scopes_update"
   topics = [ "app/scopes_update" ]
 
@@ -31,8 +35,17 @@ api_version = "2026-10"
   uri = "/webhooks/shop"
   topics = [ "shop/update" ]
 
+  [[webhooks.subscriptions]]
+  uri = "/webhooks/orders"
+  topics = [ "orders/create", "orders/updated", "orders/fulfilled", "orders/cancelled" ]
+
 [auth]
 redirect_urls = [ "https://trust-layer-chi.vercel.app/api/auth" ]
+redirect_urls = [
+  "https://trust-layer-chi.vercel.app/auth/callback",
+  "https://trust-layer-chi.vercel.app/auth/shopify/callback",
+  "https://trust-layer-chi.vercel.app/api/auth"
+]
 
 [app_proxy]
 url = "https://trust-layer-chi.vercel.app/apps/proxy"
