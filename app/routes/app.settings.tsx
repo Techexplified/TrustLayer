@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { Lock, ShieldOff, ShoppingBag, Clock, CheckCircle2, XCircle, ArrowRight, Settings } from "lucide-react";
 import type { ActionFunctionArgs, LoaderFunctionArgs, HeadersFunction } from "react-router";
 import { redirect, useLoaderData, useFetcher, useNavigate } from "react-router";
 import { authenticate } from "../shopify.server";
@@ -441,132 +442,295 @@ export default function WidgetSettings() {
           </div>
         </div>
 
-        {/* ── WHILE EITHER CONDITION UNMET: UI ELEMENT DIRECTING TO SETTINGS (/app/setting1) ── */}
+
+        {/* ── ELIGIBILITY GATE BANNER ── */}
         {!isEligible && (
           <div
             style={{
-              backgroundColor: "#fffbeb",
-              border: "1.5px solid #fde68a",
-              borderRadius: "14px",
-              padding: "18px 22px",
-              boxShadow: "0 2px 8px rgba(245, 158, 11, 0.08)",
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              flexWrap: "wrap",
-              gap: "16px",
+              background: "linear-gradient(135deg, #ffffff 0%, #fafafa 100%)",
+              border: "1px solid #e2e8f0",
+              borderLeft: "4px solid #f59e0b",
+              borderRadius: "16px",
+              padding: "0",
+              boxShadow: "0 4px 16px rgba(0,0,0,0.06)",
+              overflow: "hidden",
             }}
           >
-            <div style={{ display: "flex", alignItems: "flex-start", gap: "14px", maxWidth: "780px" }}>
-              <div
+            {/* Header strip */}
+            <div
+              style={{
+                background: "linear-gradient(90deg, #fffbeb 0%, #fef9ee 100%)",
+                borderBottom: "1px solid #fde68a",
+                padding: "14px 20px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                flexWrap: "wrap",
+                gap: "10px",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <div
+                  style={{
+                    width: "34px",
+                    height: "34px",
+                    borderRadius: "8px",
+                    background: "linear-gradient(135deg, #f59e0b, #d97706)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    boxShadow: "0 2px 6px rgba(245,158,11,0.35)",
+                    flexShrink: 0,
+                  }}
+                >
+                  <Lock size={16} color="#ffffff" strokeWidth={2.5} />
+                </div>
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <span style={{ fontSize: "14.5px", fontWeight: "700", color: "#78350f" }}>
+                      Badge Activation Locked
+                    </span>
+                    <span
+                      style={{
+                        fontSize: "10.5px",
+                        fontWeight: "700",
+                        background: "linear-gradient(90deg, #fef3c7, #fde68a)",
+                        color: "#92400e",
+                        padding: "2px 9px",
+                        borderRadius: "20px",
+                        border: "1px solid #fcd34d",
+                        letterSpacing: "0.02em",
+                      }}
+                    >
+                      2 requirements pending
+                    </span>
+                  </div>
+                  <p style={{ fontSize: "12px", color: "#92400e", margin: "2px 0 0 0", lineHeight: "1.4", opacity: 0.85 }}>
+                    Complete both milestones below to unlock the Enable Badge toggle
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => navigate("/app/setting1")}
                 style={{
-                  width: "42px",
-                  height: "42px",
-                  borderRadius: "10px",
-                  backgroundColor: "#fef3c7",
-                  color: "#d97706",
-                  display: "flex",
+                  display: "inline-flex",
                   alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: "20px",
+                  gap: "7px",
+                  background: "linear-gradient(135deg, #f59e0b, #d97706)",
+                  color: "#ffffff",
+                  padding: "8px 16px",
+                  borderRadius: "8px",
+                  fontSize: "12.5px",
+                  fontWeight: "700",
+                  border: "none",
+                  cursor: "pointer",
+                  boxShadow: "0 2px 8px rgba(245,158,11,0.3)",
+                  transition: "all 0.15s ease",
+                  whiteSpace: "nowrap",
                   flexShrink: 0,
-                  border: "1px solid #fde68a",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "linear-gradient(135deg, #d97706, #b45309)";
+                  e.currentTarget.style.boxShadow = "0 4px 12px rgba(217,119,6,0.4)";
+                  e.currentTarget.style.transform = "translateY(-1px)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "linear-gradient(135deg, #f59e0b, #d97706)";
+                  e.currentTarget.style.boxShadow = "0 2px 8px rgba(245,158,11,0.3)";
+                  e.currentTarget.style.transform = "translateY(0)";
                 }}
               >
-                🔒
-              </div>
-              <div>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                  <span style={{ fontSize: "15px", fontWeight: "700", color: "#92400e" }}>
-                    Store Verification Required to Enable Badge
-                  </span>
-                  <span
-                    style={{
-                      fontSize: "11px",
-                      fontWeight: "700",
-                      backgroundColor: "#fef3c7",
-                      color: "#b45309",
-                      padding: "2px 8px",
-                      borderRadius: "10px",
-                      border: "1px solid #fde68a",
-                    }}
-                  >
-                    Action Required
-                  </span>
-                </div>
-                <p style={{ fontSize: "13px", color: "#78350f", margin: "4px 0 0 0", lineHeight: "1.45" }}>
-                  The <strong>Enable Badge</strong> switch is disabled because your store has not yet satisfied both verification requirements: <strong>at least 20 completed orders</strong> and <strong>30 days of active store history</strong>. Once both conditions are satisfied, this banner will be removed and the Enable Badge switch will be enabled.
-                </p>
-                {/* Live Progress Chips */}
-                <div style={{ display: "flex", gap: "12px", marginTop: "10px", flexWrap: "wrap" }}>
-                  <div
-                    style={{
-                      backgroundColor: "#ffffff",
-                      padding: "4px 10px",
-                      borderRadius: "6px",
-                      border: "1px solid #fef3c7",
-                      fontSize: "12px",
-                      fontWeight: "600",
-                      color: completedOrdersCount >= 20 ? "#15803d" : "#b45309",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "5px",
-                    }}
-                  >
-                    <span>📦 Completed Orders:</span>
-                    <span style={{ fontWeight: "700" }}>{completedOrdersCount} / 20</span>
-                    <span>{completedOrdersCount >= 20 ? "✓ Met" : `(${20 - completedOrdersCount} needed)`}</span>
-                  </div>
-                  <div
-                    style={{
-                      backgroundColor: "#ffffff",
-                      padding: "4px 10px",
-                      borderRadius: "6px",
-                      border: "1px solid #fef3c7",
-                      fontSize: "12px",
-                      fontWeight: "600",
-                      color: storeAgeDays >= 30 ? "#15803d" : "#b45309",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "5px",
-                    }}
-                  >
-                    <span>⏳ Store Active Age:</span>
-                    <span style={{ fontWeight: "700" }}>{storeAgeDays} / 30 days</span>
-                    <span>{storeAgeDays >= 30 ? "✓ Met" : `(${30 - storeAgeDays} days needed)`}</span>
-                  </div>
-                </div>
-              </div>
+                <Settings size={13} strokeWidth={2.5} />
+                <span>Review in Settings</span>
+                <ArrowRight size={13} strokeWidth={2.5} />
+              </button>
             </div>
 
-            {/* CTA Button directing to Settings page (/app/setting1) */}
-            <button
-              type="button"
-              onClick={() => navigate("/app/setting1")}
+            {/* Requirements Cards */}
+            <div
               style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "8px",
-                backgroundColor: "#d97706",
-                color: "#ffffff",
-                padding: "10px 18px",
-                borderRadius: "8px",
-                fontSize: "13px",
-                fontWeight: "700",
-                border: "none",
-                cursor: "pointer",
-                boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
-                transition: "all 0.15s ease",
-                whiteSpace: "nowrap",
+                padding: "16px 20px 18px",
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: "12px",
               }}
-              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#b45309")}
-              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#d97706")}
             >
-              <span>Review & Verify in Settings</span>
-              <span style={{ fontSize: "15px" }}>→</span>
-            </button>
+              {/* Requirement 1: Completed Orders */}
+              {(() => {
+                const ordMet = completedOrdersCount >= 20;
+                const ordPct = Math.min(100, Math.round((completedOrdersCount / 20) * 100));
+                return (
+                  <div
+                    style={{
+                      background: ordMet ? "linear-gradient(135deg, #f0fdf4, #dcfce7)" : "#fafafa",
+                      border: `1px solid ${ordMet ? "#86efac" : "#e2e8f0"}`,
+                      borderRadius: "12px",
+                      padding: "14px 16px",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <div
+                          style={{
+                            width: "30px",
+                            height: "30px",
+                            borderRadius: "8px",
+                            backgroundColor: ordMet ? "#dcfce7" : "#f1f5f9",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            border: `1px solid ${ordMet ? "#86efac" : "#e2e8f0"}`,
+                          }}
+                        >
+                          <ShoppingBag size={15} color={ordMet ? "#16a34a" : "#64748b"} strokeWidth={2} />
+                        </div>
+                        <span style={{ fontSize: "12.5px", fontWeight: "700", color: ordMet ? "#15803d" : "#334155" }}>
+                          Completed Orders
+                        </span>
+                      </div>
+                      {ordMet ? (
+                        <CheckCircle2 size={18} color="#16a34a" strokeWidth={2} />
+                      ) : (
+                        <XCircle size={18} color="#f59e0b" strokeWidth={2} />
+                      )}
+                    </div>
+
+                    {/* Progress bar */}
+                    <div style={{ marginBottom: "8px" }}>
+                      <div
+                        style={{
+                          height: "6px",
+                          backgroundColor: ordMet ? "#bbf7d0" : "#e2e8f0",
+                          borderRadius: "999px",
+                          overflow: "hidden",
+                        }}
+                      >
+                        <div
+                          style={{
+                            height: "100%",
+                            width: `${ordPct}%`,
+                            background: ordMet
+                              ? "linear-gradient(90deg, #22c55e, #16a34a)"
+                              : "linear-gradient(90deg, #f59e0b, #d97706)",
+                            borderRadius: "999px",
+                            transition: "width 0.4s ease",
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <span style={{ fontSize: "11.5px", color: "#64748b", fontWeight: "500" }}>
+                        {ordMet ? "Milestone reached!" : `${20 - completedOrdersCount} more to go`}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: "12px",
+                          fontWeight: "800",
+                          color: ordMet ? "#15803d" : "#92400e",
+                          background: ordMet ? "#dcfce7" : "#fef3c7",
+                          padding: "1px 8px",
+                          borderRadius: "999px",
+                        }}
+                      >
+                        {completedOrdersCount} <span style={{ opacity: 0.6, fontWeight: "600" }}>/ 20</span>
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Requirement 2: Store Age */}
+              {(() => {
+                const ageMet = storeAgeDays >= 30;
+                const agePct = Math.min(100, Math.round((storeAgeDays / 30) * 100));
+                return (
+                  <div
+                    style={{
+                      background: ageMet ? "linear-gradient(135deg, #f0fdf4, #dcfce7)" : "#fafafa",
+                      border: `1px solid ${ageMet ? "#86efac" : "#e2e8f0"}`,
+                      borderRadius: "12px",
+                      padding: "14px 16px",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <div
+                          style={{
+                            width: "30px",
+                            height: "30px",
+                            borderRadius: "8px",
+                            backgroundColor: ageMet ? "#dcfce7" : "#f1f5f9",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            border: `1px solid ${ageMet ? "#86efac" : "#e2e8f0"}`,
+                          }}
+                        >
+                          <Clock size={15} color={ageMet ? "#16a34a" : "#64748b"} strokeWidth={2} />
+                        </div>
+                        <span style={{ fontSize: "12.5px", fontWeight: "700", color: ageMet ? "#15803d" : "#334155" }}>
+                          Store Active Age
+                        </span>
+                      </div>
+                      {ageMet ? (
+                        <CheckCircle2 size={18} color="#16a34a" strokeWidth={2} />
+                      ) : (
+                        <XCircle size={18} color="#f59e0b" strokeWidth={2} />
+                      )}
+                    </div>
+
+                    {/* Progress bar */}
+                    <div style={{ marginBottom: "8px" }}>
+                      <div
+                        style={{
+                          height: "6px",
+                          backgroundColor: ageMet ? "#bbf7d0" : "#e2e8f0",
+                          borderRadius: "999px",
+                          overflow: "hidden",
+                        }}
+                      >
+                        <div
+                          style={{
+                            height: "100%",
+                            width: `${agePct}%`,
+                            background: ageMet
+                              ? "linear-gradient(90deg, #22c55e, #16a34a)"
+                              : "linear-gradient(90deg, #f59e0b, #d97706)",
+                            borderRadius: "999px",
+                            transition: "width 0.4s ease",
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <span style={{ fontSize: "11.5px", color: "#64748b", fontWeight: "500" }}>
+                        {ageMet ? "Milestone reached!" : `${30 - storeAgeDays} days remaining`}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: "12px",
+                          fontWeight: "800",
+                          color: ageMet ? "#15803d" : "#92400e",
+                          background: ageMet ? "#dcfce7" : "#fef3c7",
+                          padding: "1px 8px",
+                          borderRadius: "999px",
+                        }}
+                      >
+                        {storeAgeDays} <span style={{ opacity: 0.6, fontWeight: "600" }}>/ 30 days</span>
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
           </div>
         )}
+
+
 
         {/* ── MAIN 2-COLUMN LAYOUT: (Left: Configuration, Right: Live Preview) ── */}
         <div style={{ display: "grid", gridTemplateColumns: "1.15fr 0.85fr", gap: "28px", alignItems: "start" }}>
@@ -599,15 +763,19 @@ export default function WidgetSettings() {
                       height: "42px",
                       borderRadius: "10px",
                       backgroundColor: !isEligible ? "#f8fafc" : badgeEnabled ? "#eff6ff" : "#f1f5f9",
-                      color: !isEligible ? "#94a3b8" : badgeEnabled ? "#2563eb" : "#64748b",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      fontSize: "20px",
                       flexShrink: 0,
+                      border: `1px solid ${!isEligible ? "#e2e8f0" : badgeEnabled ? "#bfdbfe" : "#e2e8f0"}`,
                     }}
                   >
-                    {!isEligible ? "🔒" : "🛡️"}
+                    {!isEligible
+                      ? <Lock size={20} color="#94a3b8" strokeWidth={2} />
+                      : badgeEnabled
+                        ? <ShieldOff size={20} color="#2563eb" strokeWidth={2} style={{ transform: "scaleX(-1)" }} />
+                        : <ShieldOff size={20} color="#64748b" strokeWidth={2} />
+                    }
                   </div>
                   <div>
                     <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -635,7 +803,12 @@ export default function WidgetSettings() {
                           gap: "4px",
                         }}
                       >
-                        {!isEligible ? "🔒 Disabled · Locked" : badgeEnabled ? "● Active on store" : "○ Turned off"}
+                        {!isEligible
+                          ? <><Lock size={9} strokeWidth={2.5} /> Disabled · Locked</>
+                          : badgeEnabled
+                            ? "● Active on store"
+                            : "○ Turned off"
+                        }
                       </span>
                     </div>
                     <div style={{ fontSize: "12.5px", color: "#64748b", marginTop: "2px" }}>
@@ -710,12 +883,12 @@ export default function WidgetSettings() {
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      fontSize: "11px",
                     }}
                   >
-                    {!isEligible && "🔒"}
+                    {!isEligible && <Lock size={11} color="#94a3b8" strokeWidth={2.5} />}
                   </div>
                 </div>
+
               </div>
             </div>
 
