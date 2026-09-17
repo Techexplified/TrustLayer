@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import type { ActionFunctionArgs, LoaderFunctionArgs, HeadersFunction } from "react-router";
-import { redirect, useLoaderData, useFetcher } from "react-router";
+import { redirect, useLoaderData, useFetcher, useNavigate } from "react-router";
 import { authenticate } from "../shopify.server";
 import prisma from "../db.server";
 import { getStoreOverviewData, invalidateStoreOverviewCache } from "../lib/storeMetrics.server";
@@ -25,12 +25,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
   const overviewData = await getStoreOverviewData(admin, shop, 0);
 
-  // Calculate completed orders & storeAgeDays for eligibility check (20 orders & 30 days active store)
-  const completedOrders = (overviewData.suppliers as Array<{ completedOrders?: number }>).reduce(
-    (sum, v) => sum + (v.completedOrders || 0),
-    0
-  );
-  const completedOrdersCount = Math.max(settings.completedOrdersCount || 0, completedOrders);
+  // Use ONLY the persisted DB value for eligibility check.
+  // The DB value is already ratcheted (Math.max) by fetchAndSyncStoreDetails and
+  // persistBaselineToDb on every sync — so it never regresses.
+  // We intentionally do NOT augment it with the live supplier sum here, because
+  // fetchAndSyncStoreDetails may count total orders (not just fulfilled) as a fallback,
+  // which could prematurely make isEligible = true before the merchant actually has 20
+  // completed/fulfilled orders.
+  const completedOrdersCount = settings.completedOrdersCount || 0;
 
   let storeAgeDays = settings.storeAgeDays || 0;
   if (storeAgeDays === 0) {
@@ -45,6 +47,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     settings,
     summary: overviewData.summary,
     isEligible,
+    completedOrdersCount,
+    storeAgeDays,
   };
 };
 
@@ -85,12 +89,24 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 };
 
 export default function WidgetSettings() {
-  const { shop, settings, summary, isEligible } = useLoaderData<typeof loader>();
+  const {
+    shop,
+    settings,
+    summary,
+    isEligible,
+    completedOrdersCount = 0,
+    storeAgeDays = 0,
+  } = useLoaderData<typeof loader>();
   const fetcher = useFetcher<typeof action>();
+  const navigate = useNavigate();
+
+  const effectiveBadgeEnabled = isEligible
+    ? ((settings as { badgeEnabled?: boolean } | null)?.badgeEnabled ?? true)
+    : false;
 
   // Stored saved state
   const [savedConfig, setSavedConfig] = useState({
-    badgeEnabled: (settings as { badgeEnabled?: boolean } | null)?.badgeEnabled ?? true,
+    badgeEnabled: effectiveBadgeEnabled,
     showOnProductPages: (settings as { showOnProductPages?: boolean } | null)?.showOnProductPages ?? true,
     showOnSellerProfile: (settings as { showOnSellerProfile?: boolean } | null)?.showOnSellerProfile ?? true,
     showOnCartPage: (settings as { showOnCartPage?: boolean } | null)?.showOnCartPage ?? false,
@@ -102,7 +118,7 @@ export default function WidgetSettings() {
   });
 
   // Current working form state
-  const [badgeEnabled, setBadgeEnabled] = useState(savedConfig.badgeEnabled);
+  const [badgeEnabled, setBadgeEnabled] = useState(effectiveBadgeEnabled);
   const [showOnProductPages, setShowOnProductPages] = useState(savedConfig.showOnProductPages);
   const [showOnSellerProfile, setShowOnSellerProfile] = useState(savedConfig.showOnSellerProfile);
   const [showOnCartPage, setShowOnCartPage] = useState(savedConfig.showOnCartPage);
@@ -134,7 +150,7 @@ export default function WidgetSettings() {
         showNumericScore: boolean;
       };
       const newConfig = {
-        badgeEnabled: s.badgeEnabled ?? true,
+        badgeEnabled: isEligible ? (s.badgeEnabled ?? true) : false,
         showOnProductPages: s.showOnProductPages,
         showOnSellerProfile: s.showOnSellerProfile,
         showOnCartPage: s.showOnCartPage,
@@ -159,7 +175,7 @@ export default function WidgetSettings() {
       const timer = setTimeout(() => setShowToast(false), 3000);
       return () => clearTimeout(timer);
     }
-  }, [fetcher.data]);
+  }, [fetcher.data, isEligible]);
 
   // Click outside position dropdown
   useEffect(() => {
@@ -200,7 +216,7 @@ export default function WidgetSettings() {
 
   const handleSave = () => {
     const fd = new FormData();
-    fd.append("badgeEnabled", String(badgeEnabled));
+    fd.append("badgeEnabled", String(isEligible ? badgeEnabled : false));
     fd.append("showOnProductPages", String(showOnProductPages));
     fd.append("showOnSellerProfile", String(showOnSellerProfile));
     fd.append("showOnCartPage", String(showOnCartPage));
@@ -425,6 +441,133 @@ export default function WidgetSettings() {
           </div>
         </div>
 
+        {/* ── WHILE EITHER CONDITION UNMET: UI ELEMENT DIRECTING TO SETTINGS (/app/setting1) ── */}
+        {!isEligible && (
+          <div
+            style={{
+              backgroundColor: "#fffbeb",
+              border: "1.5px solid #fde68a",
+              borderRadius: "14px",
+              padding: "18px 22px",
+              boxShadow: "0 2px 8px rgba(245, 158, 11, 0.08)",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: "16px",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "flex-start", gap: "14px", maxWidth: "780px" }}>
+              <div
+                style={{
+                  width: "42px",
+                  height: "42px",
+                  borderRadius: "10px",
+                  backgroundColor: "#fef3c7",
+                  color: "#d97706",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "20px",
+                  flexShrink: 0,
+                  border: "1px solid #fde68a",
+                }}
+              >
+                🔒
+              </div>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                  <span style={{ fontSize: "15px", fontWeight: "700", color: "#92400e" }}>
+                    Store Verification Required to Enable Badge
+                  </span>
+                  <span
+                    style={{
+                      fontSize: "11px",
+                      fontWeight: "700",
+                      backgroundColor: "#fef3c7",
+                      color: "#b45309",
+                      padding: "2px 8px",
+                      borderRadius: "10px",
+                      border: "1px solid #fde68a",
+                    }}
+                  >
+                    Action Required
+                  </span>
+                </div>
+                <p style={{ fontSize: "13px", color: "#78350f", margin: "4px 0 0 0", lineHeight: "1.45" }}>
+                  The <strong>Enable Badge</strong> switch is disabled because your store has not yet satisfied both verification requirements: <strong>at least 20 completed orders</strong> and <strong>30 days of active store history</strong>. Once both conditions are satisfied, this banner will be removed and the Enable Badge switch will be enabled.
+                </p>
+                {/* Live Progress Chips */}
+                <div style={{ display: "flex", gap: "12px", marginTop: "10px", flexWrap: "wrap" }}>
+                  <div
+                    style={{
+                      backgroundColor: "#ffffff",
+                      padding: "4px 10px",
+                      borderRadius: "6px",
+                      border: "1px solid #fef3c7",
+                      fontSize: "12px",
+                      fontWeight: "600",
+                      color: completedOrdersCount >= 20 ? "#15803d" : "#b45309",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "5px",
+                    }}
+                  >
+                    <span>📦 Completed Orders:</span>
+                    <span style={{ fontWeight: "700" }}>{completedOrdersCount} / 20</span>
+                    <span>{completedOrdersCount >= 20 ? "✓ Met" : `(${20 - completedOrdersCount} needed)`}</span>
+                  </div>
+                  <div
+                    style={{
+                      backgroundColor: "#ffffff",
+                      padding: "4px 10px",
+                      borderRadius: "6px",
+                      border: "1px solid #fef3c7",
+                      fontSize: "12px",
+                      fontWeight: "600",
+                      color: storeAgeDays >= 30 ? "#15803d" : "#b45309",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "5px",
+                    }}
+                  >
+                    <span>⏳ Store Active Age:</span>
+                    <span style={{ fontWeight: "700" }}>{storeAgeDays} / 30 days</span>
+                    <span>{storeAgeDays >= 30 ? "✓ Met" : `(${30 - storeAgeDays} days needed)`}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* CTA Button directing to Settings page (/app/setting1) */}
+            <button
+              type="button"
+              onClick={() => navigate("/app/setting1")}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "8px",
+                backgroundColor: "#d97706",
+                color: "#ffffff",
+                padding: "10px 18px",
+                borderRadius: "8px",
+                fontSize: "13px",
+                fontWeight: "700",
+                border: "none",
+                cursor: "pointer",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+                transition: "all 0.15s ease",
+                whiteSpace: "nowrap",
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#b45309")}
+              onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#d97706")}
+            >
+              <span>Review & Verify in Settings</span>
+              <span style={{ fontSize: "15px" }}>→</span>
+            </button>
+          </div>
+        )}
+
         {/* ── MAIN 2-COLUMN LAYOUT: (Left: Configuration, Right: Live Preview) ── */}
         <div style={{ display: "grid", gridTemplateColumns: "1.15fr 0.85fr", gap: "28px", alignItems: "start" }}>
           
@@ -436,9 +579,13 @@ export default function WidgetSettings() {
               style={{
                 backgroundColor: "#ffffff",
                 borderRadius: "14px",
-                border: badgeEnabled ? "1.5px solid #3b82f6" : "1px solid #e2e8f0",
+                border: !isEligible
+                  ? "1.5px dashed #cbd5e1"
+                  : badgeEnabled
+                    ? "1.5px solid #3b82f6"
+                    : "1px solid #e2e8f0",
                 padding: "18px 22px",
-                boxShadow: badgeEnabled
+                boxShadow: badgeEnabled && isEligible
                   ? "0 4px 12px -2px rgba(37, 99, 235, 0.08)"
                   : "0 1px 3px rgba(0,0,0,0.02)",
                 transition: "all 0.2s ease",
@@ -451,8 +598,8 @@ export default function WidgetSettings() {
                       width: "42px",
                       height: "42px",
                       borderRadius: "10px",
-                      backgroundColor: badgeEnabled ? "#eff6ff" : "#f1f5f9",
-                      color: badgeEnabled ? "#2563eb" : "#64748b",
+                      backgroundColor: !isEligible ? "#f8fafc" : badgeEnabled ? "#eff6ff" : "#f1f5f9",
+                      color: !isEligible ? "#94a3b8" : badgeEnabled ? "#2563eb" : "#64748b",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
@@ -460,7 +607,7 @@ export default function WidgetSettings() {
                       flexShrink: 0,
                     }}
                   >
-                    🛡️
+                    {!isEligible ? "🔒" : "🛡️"}
                   </div>
                   <div>
                     <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -471,44 +618,84 @@ export default function WidgetSettings() {
                         style={{
                           fontSize: "10.5px",
                           fontWeight: "700",
-                          backgroundColor: badgeEnabled ? "#dcfce7" : "#f1f5f9",
-                          color: badgeEnabled ? "#15803d" : "#64748b",
+                          backgroundColor: !isEligible
+                            ? "#fef3c7"
+                            : badgeEnabled
+                              ? "#dcfce7"
+                              : "#f1f5f9",
+                          color: !isEligible
+                            ? "#b45309"
+                            : badgeEnabled
+                              ? "#15803d"
+                              : "#64748b",
                           padding: "2px 8px",
                           borderRadius: "10px",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "4px",
                         }}
                       >
-                        {badgeEnabled ? "● Active on store" : "○ Turned off"}
+                        {!isEligible ? "🔒 Disabled · Locked" : badgeEnabled ? "● Active on store" : "○ Turned off"}
                       </span>
                     </div>
                     <div style={{ fontSize: "12.5px", color: "#64748b", marginTop: "2px" }}>
-                      Master switch to enable or disable the TrustLayer badge across your storefront
+                      {!isEligible ? (
+                        <span>
+                          Disabled until both verification requirements are satisfied.{" "}
+                          <button
+                            type="button"
+                            onClick={() => navigate("/app/setting1")}
+                            style={{
+                              background: "none",
+                              border: "none",
+                              padding: 0,
+                              color: "#2563eb",
+                              fontWeight: "600",
+                              cursor: "pointer",
+                              textDecoration: "underline",
+                              fontSize: "12.5px",
+                            }}
+                          >
+                            Review & verify status in Settings →
+                          </button>
+                        </span>
+                      ) : (
+                        "Master switch to enable or disable the TrustLayer badge across your storefront"
+                      )}
                     </div>
                   </div>
                 </div>
 
                 <div
                   role="switch"
-                  aria-checked={badgeEnabled}
-                  tabIndex={0}
-                  onClick={() => setBadgeEnabled(!badgeEnabled)}
+                  aria-checked={isEligible && badgeEnabled}
+                  aria-disabled={!isEligible}
+                  tabIndex={isEligible ? 0 : -1}
+                  onClick={() => {
+                    if (isEligible) {
+                      setBadgeEnabled(!badgeEnabled);
+                    }
+                  }}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
+                    if (isEligible && (e.key === "Enter" || e.key === " ")) {
                       e.preventDefault();
                       setBadgeEnabled(!badgeEnabled);
                     }
                   }}
+                  title={!isEligible ? "Badge activation is disabled until store eligibility requirements (20 orders & 30 days) are met." : ""}
                   style={{
                     width: "48px",
                     height: "28px",
                     borderRadius: "14px",
-                    backgroundColor: badgeEnabled ? "#2563eb" : "#cbd5e1",
+                    backgroundColor: !isEligible ? "#e2e8f0" : badgeEnabled ? "#2563eb" : "#cbd5e1",
                     padding: "3px",
                     display: "flex",
                     alignItems: "center",
-                    cursor: "pointer",
-                    transition: "background-color 0.2s ease",
+                    cursor: isEligible ? "pointer" : "not-allowed",
+                    transition: "all 0.2s ease",
                     boxSizing: "border-box",
                     flexShrink: 0,
+                    opacity: !isEligible ? 0.65 : 1,
                   }}
                 >
                   <div
@@ -518,10 +705,16 @@ export default function WidgetSettings() {
                       borderRadius: "50%",
                       backgroundColor: "#ffffff",
                       boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
-                      transform: badgeEnabled ? "translateX(20px)" : "translateX(0px)",
+                      transform: isEligible && badgeEnabled ? "translateX(20px)" : "translateX(0px)",
                       transition: "transform 0.2s ease",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "11px",
                     }}
-                  />
+                  >
+                    {!isEligible && "🔒"}
+                  </div>
                 </div>
               </div>
             </div>
@@ -849,21 +1042,21 @@ export default function WidgetSettings() {
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px", marginTop: "14px" }}>
                 
                 {/* Style 1: Full */}
-                <label
-                  style={{
-                    border: `2px solid ${badgeStyle === "FULL" ? "#4f46e5" : "#e2e8f0"}`,
-                    borderRadius: "12px",
-                    padding: "14px",
-                    cursor: "pointer",
-                    backgroundColor: badgeStyle === "FULL" ? "#faf5ff" : "#ffffff",
-                    transition: "all 0.15s ease",
-                    display: "flex",
-                    flexDirection: "column",
-                    justifyContent: "space-between",
-                    gap: "12px",
-                    position: "relative",
-                  }}
-                >
+                  <label
+                    style={{
+                      border: `2px solid ${badgeStyle === "FULL" ? "#4f46e5" : "#e2e8f0"}`,
+                      borderRadius: "12px",
+                      padding: "14px",
+                      cursor: "pointer",
+                      backgroundColor: badgeStyle === "FULL" ? "#faf5ff" : "#ffffff",
+                      transition: "all 0.15s ease",
+                      display: "flex",
+                      flexDirection: "column",
+                      justifyContent: "space-between",
+                      gap: "12px",
+                      position: "relative",
+                    }}
+                  >
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <input
                       type="radio"
@@ -1347,25 +1540,58 @@ export default function WidgetSettings() {
                     <div style={{ padding: "16px" }}>
                       {!badgeEnabled ? (
                         <div style={{ padding: "30px 15px", textAlign: "center", color: "#64748b", fontSize: "12px" }}>
-                          <div style={{ fontSize: "24px", marginBottom: "6px" }}>🛡️</div>
-                          <div style={{ fontWeight: "700", color: "#0f172a" }}>TrustLayer badge is turned off</div>
-                          <div style={{ marginTop: "4px" }}>Turn on &quot;Enable Badge&quot; above to display your badge to shoppers.</div>
+                          <div style={{ fontSize: "24px", marginBottom: "6px" }}>{!isEligible ? "🔒" : "🛡️"}</div>
+                          <div style={{ fontWeight: "700", color: "#0f172a" }}>
+                            {!isEligible ? "TrustLayer badge is locked" : "TrustLayer badge is turned off"}
+                          </div>
+                          <div style={{ marginTop: "4px" }}>
+                            {!isEligible ? (
+                              <span>
+                                Store verification required (20 orders & 30 days). Current: {completedOrdersCount}/20 orders, {storeAgeDays}/30 days active.{" "}
+                                <button
+                                  type="button"
+                                  onClick={() => navigate("/app/setting1")}
+                                  style={{
+                                    background: "none",
+                                    border: "none",
+                                    padding: 0,
+                                    color: "#2563eb",
+                                    fontWeight: "600",
+                                    cursor: "pointer",
+                                    textDecoration: "underline",
+                                    fontSize: "12px",
+                                  }}
+                                >
+                                  Review in Settings →
+                                </button>
+                              </span>
+                            ) : (
+                              'Turn on "Enable Badge" above to display your badge to shoppers.'
+                            )}
+                          </div>
                           <button
                             type="button"
-                            onClick={() => setBadgeEnabled(true)}
+                            disabled={!isEligible}
+                            onClick={() => {
+                              if (isEligible) setBadgeEnabled(true);
+                            }}
                             style={{
                               marginTop: "12px",
-                              backgroundColor: "#2563eb",
-                              color: "#ffffff",
-                              border: "none",
+                              backgroundColor: !isEligible ? "#f1f5f9" : "#2563eb",
+                              color: !isEligible ? "#94a3b8" : "#ffffff",
+                              border: !isEligible ? "1px solid #e2e8f0" : "none",
                               borderRadius: "6px",
                               padding: "6px 14px",
                               fontSize: "12px",
                               fontWeight: "600",
-                              cursor: "pointer",
+                              cursor: !isEligible ? "not-allowed" : "pointer",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "6px",
                             }}
                           >
-                            Enable Badge
+                            {!isEligible && <span>🔒</span>}
+                            <span>{!isEligible ? "Locked (Verification Required)" : "Enable Badge"}</span>
                           </button>
                         </div>
                       ) : !showOnProductPages ? (
@@ -1544,9 +1770,35 @@ export default function WidgetSettings() {
                     <div style={{ padding: "16px" }}>
                       {!badgeEnabled ? (
                         <div style={{ padding: "30px 15px", textAlign: "center", color: "#64748b", fontSize: "12px" }}>
-                          <div style={{ fontSize: "24px", marginBottom: "6px" }}>🛡️</div>
-                          <div style={{ fontWeight: "700", color: "#0f172a" }}>TrustLayer badge is turned off</div>
-                          <div style={{ marginTop: "4px" }}>Turn on &quot;Enable Badge&quot; above to display the badge in cart.</div>
+                          <div style={{ fontSize: "24px", marginBottom: "6px" }}>{!isEligible ? "🔒" : "🛡️"}</div>
+                          <div style={{ fontWeight: "700", color: "#0f172a" }}>
+                            {!isEligible ? "TrustLayer badge is locked" : "TrustLayer badge is turned off"}
+                          </div>
+                          <div style={{ marginTop: "4px" }}>
+                            {!isEligible ? (
+                              <span>
+                                Store verification required (20 orders & 30 days). Current: {completedOrdersCount}/20 orders, {storeAgeDays}/30 days active.{" "}
+                                <button
+                                  type="button"
+                                  onClick={() => navigate("/app/setting1")}
+                                  style={{
+                                    background: "none",
+                                    border: "none",
+                                    padding: 0,
+                                    color: "#2563eb",
+                                    fontWeight: "600",
+                                    cursor: "pointer",
+                                    textDecoration: "underline",
+                                    fontSize: "12px",
+                                  }}
+                                >
+                                  Review in Settings →
+                                </button>
+                              </span>
+                            ) : (
+                              'Turn on "Enable Badge" above to display the badge in cart.'
+                            )}
+                          </div>
                         </div>
                       ) : !showOnCartPage ? (
                         <div style={{ padding: "30px 15px", textAlign: "center", color: "#64748b", fontSize: "12px" }}>
